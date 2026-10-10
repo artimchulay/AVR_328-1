@@ -8,146 +8,151 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- ВЕРХНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ -->
+        <!-- КОМПАКТНАЯ ЗАКРЕПЛЁННАЯ ВЕРХНЯЯ ПАНЕЛЬ -->
         <header class="toolbar">
-            <div class="toolbar-brand">
-                <span class="chip-icon">⚡</span>
-                <h1>AVR Studio Web <span>ATmega328P</span></h1>
-            </div>
-
-            <div class="toolbar-controls">
+            <div class="toolbar-left">
+                <div class="logo">⚡ <span>AVR Studio</span></div>
                 <div class="select-wrapper">
                     <select id="exampleSelector" onchange="loadSelectedExample()">
-                        <option value="">-- Готовые примеры программ --</option>
+                        <option value="btn_counter">Счётчик по кнопкам (K1: +1, K2: -1)</option>
                         <option value="led_blink">Бегущий огонёк (Порт D)</option>
-                        <option value="button_led">Кнопка включает светодиод (PULL-UP)</option>
-                        <option value="fibonacci">Числа Фибоначчи в памяти (ОЗУ)</option>
+                        <option value="button_led">Кнопка включает светодиод L</option>
+                        <option value="fibonacci">Числа Фибоначчи в памяти</option>
                         <option value="uart_tx">Отправка текста в терминал (UART)</option>
                         <option value="alu_flags">Арифметика и флаги переполнения</option>
                     </select>
                 </div>
+            </div>
 
-                <div class="btn-group">
-                    <button id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Шаг (F11)">
-                        <span>⏭</span> Шаг
-                    </button>
-                    <button id="btnRun" class="btn btn-run" onclick="toggleRun()">
-                        <span id="runIcon">▶</span> <span id="runText">Пуск</span>
-                    </button>
-                    <button id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сбросить процессор">
-                        <span>🔄</span> Сброс
-                    </button>
-                </div>
-
-                <div class="speed-control">
-                    <label for="speedRange">Скорость:</label>
+            <div class="toolbar-center">
+                <button id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Шаг (F11)">
+                    <span>⏭</span> Шаг
+                </button>
+                <button id="btnRun" class="btn btn-run" onclick="toggleRun()">
+                    <span id="runIcon">▶</span> <span id="runText">Пуск</span>
+                </button>
+                <button id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сбросить процессор">
+                    <span>🔄</span> Сброс
+                </button>
+                
+                <div class="speed-box">
                     <input type="range" id="speedRange" min="1" max="100" value="30" oninput="updateSpeed(this.value)">
-                    <span id="speedVal">30 оп/сек</span>
+                    <span id="speedVal">30 оп/с</span>
                 </div>
             </div>
 
-            <!-- МОБИЛЬНЫЕ ВКЛАДКИ -->
-            <nav class="mobile-tabs">
-                <button class="tab-btn active" onclick="switchTab('editorTab')">📝 Код</button>
-                <button class="tab-btn" onclick="switchTab('boardTab')">💡 Плата</button>
-                <button class="tab-btn" onclick="switchTab('cpuTab')">⚙️ Регистры</button>
-                <button class="tab-btn" onclick="switchTab('memTab')">💾 ОЗУ</button>
+            <!-- НАВИГАЦИЯ МЕЖДУ ГОРИЗОНТАЛЬНЫМИ ЭКРАНАМИ -->
+            <nav class="nav-screens">
+                <button class="nav-screen-btn active" onclick="scrollToSlide(0)">📝 Код</button>
+                <button class="nav-screen-btn" onclick="scrollToSlide(1)">💡 Плата</button>
+                <button class="nav-screen-btn" onclick="scrollToSlide(2)">⚙️ Процессор</button>
             </nav>
         </header>
 
-        <!-- ОСНОВНАЯ СЕТКА ЭКРАНА -->
-        <main class="workspace-grid">
-            <!-- ПАНЕЛЬ 1: РЕДАКТОР КОДА -->
-            <section class="panel editor-panel" id="editorTab">
-                <div class="panel-header">
-                    <h2>📝 Ассемблер AVR (.asm)</h2>
-                    <div class="editor-status">
-                        <span id="compilerStatus">Готов</span>
-                        <span id="cycleCounter">Такты: 0</span>
-                    </div>
-                </div>
-                <div class="editor-wrapper">
-                    <div class="line-numbers" id="lineNumbers">1</div>
-                    <textarea id="asmCode" spellcheck="false" placeholder="Пишите код на ассемблере здесь..."></textarea>
-                </div>
-            </section>
+        <!-- ПЛАШКА-ПОДСКАЗКА: КАК ЭТО РАБОТАЕТ -->
+        <div class="hint-banner" id="hintBanner">
+            <span class="hint-icon">💡</span>
+            <div class="hint-text" id="hintText">Инструкция к выбранной программе...</div>
+        </div>
 
-            <!-- ПАНЕЛЬ 2: ВИРТУАЛЬНАЯ ПЛАТА -->
-            <section class="panel board-panel" id="boardTab">
-                <div class="panel-header">
-                    <h2>💡 Интерактивная плата ввода-вывода</h2>
-                </div>
+        <!-- ГОРИЗОНТАЛЬНЫЙ СЛАЙДЕР С ТРЕМЯ ЭКРАНАМИ -->
+        <main class="slider-viewport" id="sliderViewport">
+            <div class="slider-track">
                 
-                <div class="board-container">
-                    <div class="board-card uno-led-card">
-                        <div class="card-title">Светодиод Arduino Uno [L] (Вывод PB5)</div>
-                        <div class="led-wrapper single-led">
-                            <div class="led-light" id="ledPB5"></div>
-                            <span class="led-label">PB5 (Pin 13)</span>
+                <!-- ЭКРАН 1: РЕДАКТОР КОДА -->
+                <section class="slide-panel editor-slide">
+                    <div class="slide-header">
+                        <h2>📝 Редактор ассемблера (.asm)</h2>
+                        <div class="editor-status">
+                            <span id="compilerStatus">Готов</span>
+                            <span id="cycleCounter">Такты: 0</span>
                         </div>
                     </div>
-
-                    <div class="board-card">
-                        <div class="card-title">Линейка светодиодов: Порт D (PD7...PD0)</div>
-                        <div class="led-bar" id="portDLeds"></div>
+                    <div class="editor-wrapper">
+                        <div class="line-numbers" id="lineNumbers">1</div>
+                        <textarea id="asmCode" spellcheck="false" placeholder="Пишите код на ассемблере здесь..."></textarea>
                     </div>
+                </section>
 
-                    <div class="board-card">
-                        <div class="card-title">Кнопочный модуль (PB0..PB5 / PD2..PD3)</div>
-                        <p class="board-note">В режиме PULL-UP нажатая кнопка выдаёт логический 0.</p>
-                        <div class="btn-matrix" id="buttonMatrix"></div>
+                <!-- ЭКРАН 2: ИНТЕРАКТИВНАЯ ПЛАТА -->
+                <section class="slide-panel board-slide">
+                    <div class="slide-header">
+                        <h2>💡 Интерактивная плата ввода-вывода</h2>
+                        <small style="color:var(--text-muted);">Кнопки фиксируются при нажатии</small>
                     </div>
-
-                    <div class="board-card uart-card">
-                        <div class="uart-header">
-                            <div class="card-title">Терминал UART (UDR0 / 9600 baud)</div>
-                            <button class="btn-link" onclick="clearUart()">Очистить</button>
+                    <div class="board-scroll-area">
+                        <!-- Кнопочный модуль -->
+                        <div class="board-card">
+                            <div class="card-title">Кнопочный модуль с фиксацией (K1..K8)</div>
+                            <p class="board-note">Нажмите кнопку, чтобы зажать её в положение 0 (PULL-UP). Нажмите ещё раз, чтобы отжать.</p>
+                            <div class="btn-matrix" id="buttonMatrix"></div>
                         </div>
-                        <pre class="uart-console" id="uartTerminal">UART готов к приёму данных...</pre>
+
+                        <!-- Светодиод L -->
+                        <div class="board-card uno-led-card">
+                            <div class="card-title">Светодиод платы [L] (Вывод PB5 / Pin 13)</div>
+                            <div class="single-led">
+                                <div class="led-light" id="ledPB5"></div>
+                                <span class="led-label">PB5</span>
+                            </div>
+                        </div>
+
+                        <!-- Линейка Порта D -->
+                        <div class="board-card">
+                            <div class="card-title">Линейка светодиодов: Порт D (PD7...PD0)</div>
+                            <div class="led-bar" id="portDLeds"></div>
+                        </div>
+
+                        <!-- Монитор UART -->
+                        <div class="board-card uart-card">
+                            <div class="uart-header">
+                                <div class="card-title">Терминал UART (UDR0)</div>
+                                <button class="btn-link" onclick="clearUart()">Очистить</button>
+                            </div>
+                            <pre class="uart-console" id="uartTerminal">UART готов к приёму данных...</pre>
+                        </div>
                     </div>
-                </div>
-            </section>
+                </section>
 
-            <!-- ПАНЕЛЬ 3: РЕГИСТРЫ И SREG -->
-            <section class="panel cpu-panel" id="cpuTab">
-                <div class="panel-header">
-                    <h2>⚙️ Регистры процессора</h2>
-                </div>
-
-                <div class="sreg-box">
-                    <div class="sreg-title">Регистр состояния SREG [I T H S V N Z C]</div>
-                    <div class="flags-grid" id="flagsGrid"></div>
-                </div>
-
-                <div class="pointers-row">
-                    <div class="pointer-badge"><span>PC:</span> <b id="valPC">0x0000</b></div>
-                    <div class="pointer-badge"><span>SP:</span> <b id="valSP">0x08FF</b></div>
-                    <div class="pointer-badge"><span>X:</span> <b id="valX">0x0000</b></div>
-                    <div class="pointer-badge"><span>Y:</span> <b id="valY">0x0000</b></div>
-                    <div class="pointer-badge"><span>Z:</span> <b id="valZ">0x0000</b></div>
-                </div>
-
-                <div class="registers-container">
-                    <div class="registers-grid" id="registersGrid"></div>
-                </div>
-            </section>
-
-            <!-- ПАНЕЛЬ 4: ДАМП ОЗУ -->
-            <section class="panel mem-panel" id="memTab">
-                <div class="panel-header">
-                    <h2>💾 Оперативная память (SRAM 0x0100+)</h2>
-                </div>
-                <div class="mem-container">
-                    <div class="mem-box">
-                        <div class="mem-subhead">Область данных массивов (с адреса 0x0100)</div>
-                        <div class="mem-dump" id="ramDump"></div>
+                <!-- ЭКРАН 3: РЕГИСТРЫ, ФЛАГИ И ОЗУ -->
+                <section class="slide-panel cpu-slide">
+                    <div class="slide-header">
+                        <h2>⚙️ Состояние процессора и память</h2>
                     </div>
-                    <div class="mem-box">
-                        <div class="mem-subhead">Область стека (от RAMEND 0x08FF вниз)</div>
-                        <div class="mem-dump" id="stackDump"></div>
+                    <div class="cpu-scroll-area">
+                        <!-- Флаги регистра состояния -->
+                        <div class="cpu-subcard">
+                            <div class="card-title">Регистр состояния SREG [I T H S V N Z C]</div>
+                            <div class="flags-grid" id="flagsGrid"></div>
+                        </div>
+
+                        <!-- Указатели -->
+                        <div class="pointers-bar">
+                            <div class="ptr">PC: <b id="valPC">0x0000</b></div>
+                            <div class="ptr">SP: <b id="valSP">0x08FF</b></div>
+                            <div class="ptr">X: <b id="valX">0x0000</b></div>
+                            <div class="ptr">Y: <b id="valY">0x0000</b></div>
+                            <div class="ptr">Z: <b id="valZ">0x0000</b></div>
+                        </div>
+
+                        <!-- 32 Регистра РОН -->
+                        <div class="cpu-subcard">
+                            <div class="card-title">Регистры общего назначения (R0...R31)</div>
+                            <div class="registers-grid" id="registersGrid"></div>
+                        </div>
+
+                        <!-- Дамп памяти -->
+                        <div class="cpu-subcard">
+                            <div class="card-title">Дамп ОЗУ (Массивы 0x0100+ и Стек 0x08FF)</div>
+                            <div class="mem-dumps-row">
+                                <pre class="dump-view" id="ramDump"></pre>
+                                <pre class="dump-view" id="stackDump"></pre>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </section>
+                </section>
+
+            </div>
         </main>
     </div>
 
