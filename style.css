@@ -11,7 +11,7 @@
     --accent-gold: #ffb300;
     --accent-red: #ff3d00;
     
-    /* СИНТАКСИС */
+    /* ЦВЕТА СИНТАКСИСА */
     --syn-op: #38bdf8;
     --syn-com: #4ade80;
     --syn-lbl: #fb923c;
@@ -20,6 +20,7 @@
     
     --font-mono: 'Consolas', 'Courier New', monospace;
     --font-ui: system-ui, -apple-system, sans-serif;
+    --line-height: 22px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -65,7 +66,7 @@ html, body {
     font-size: 0.85em;
     outline: none;
     cursor: pointer;
-    max-width: 280px;
+    max-width: 290px;
 }
 
 .toolbar-center { display: flex; align-items: center; gap: 6px; }
@@ -102,7 +103,7 @@ html, body {
     cursor: pointer;
 }
 
-.nav-screens { display: none; gap: 4px; } /* Скрыто на ПК, активно на смартфонах */
+.nav-screens { display: none; gap: 4px; }
 .nav-screen-btn {
     background: rgba(0,0,0,0.3);
     border: 1px solid var(--border-color);
@@ -134,7 +135,7 @@ html, body {
 .hint-icon { font-size: 1.1em; }
 .hint-text b { color: var(--accent-gold); }
 
-/* ================= 3. ОСНОВНАЯ ЗОНА: НА ПК 3 КОЛОНКИ ================= */
+/* ================= 3. ОСНОВНАЯ ЗОНА ================= */
 .slider-viewport {
     flex: 1;
     height: 100%;
@@ -144,7 +145,7 @@ html, body {
 
 .slider-track {
     display: grid;
-    grid-template-columns: 1.25fr 1fr 1fr; /* НА ПК ВСЕ 3 КОЛОНКИ ВИДНЫ СРАЗУ */
+    grid-template-columns: 1.3fr 1fr 1fr;
     height: 100%;
     gap: 10px;
     padding: 10px;
@@ -164,16 +165,21 @@ html, body {
 .slide-header {
     background: rgba(255,255,255,0.02);
     border-bottom: 1px solid var(--border-color);
-    padding: 10px 14px;
+    padding: 8px 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     flex-shrink: 0;
 }
 .slide-header h2 { font-size: 0.9em; font-weight: 700; color: #fff; }
+.btn-clear-code {
+    background: transparent; border: 1px solid var(--border-color); color: var(--text-muted);
+    font-size: 0.75em; padding: 2px 7px; border-radius: 5px; cursor: pointer;
+}
+.btn-clear-code:hover { color: #fff; border-color: #fff; }
 .editor-status { font-size: 0.78em; color: var(--text-muted); display: flex; gap: 10px; }
 
-/* ================= РЕДАКТОР С ПОДСВЕТКОЙ ================= */
+/* ================= РЕДАКТОР С ТОЧКАМИ ОСТАНОВА И СТРЕЛКОЙ PC ================= */
 .editor-wrapper {
     flex: 1;
     display: flex;
@@ -181,23 +187,71 @@ html, body {
     min-height: 0;
     background: #080a0f;
     position: relative;
+    overflow: hidden;
 }
 
-.line-numbers {
-    width: 42px;
+/* Колонка номеров строк с поддержкой 🔴 и ▶ */
+.line-gutter {
+    width: 48px;
     height: 100%;
-    padding: 12px 6px;
-    text-align: right;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 20px;
-    color: #4b5563;
+    padding: 10px 0;
     background: #06070a;
-    user-select: none;
     border-right: 1px solid #1a1e28;
+    user-select: none;
     overflow: hidden;
     flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: var(--line-height);
 }
+
+.gutter-row {
+    height: var(--line-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px 0 6px;
+    cursor: pointer;
+    transition: background .1s;
+}
+.gutter-row:hover { background: rgba(255,255,255,0.05); }
+
+/* Красная точка останова (Breakpoint) */
+.bp-marker {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: transparent;
+    transition: background .15s;
+}
+.gutter-row.has-bp .bp-marker {
+    background: #ff3d00;
+    box-shadow: 0 0 8px #ff3d00;
+}
+
+/* Жёлтая стрелка текущего положения PC ▶ */
+.pc-arrow {
+    font-size: 10px;
+    color: transparent;
+    font-weight: 800;
+    width: 10px;
+    text-align: center;
+}
+.gutter-row.is-pc .pc-arrow {
+    color: #ffd600;
+    text-shadow: 0 0 6px #ffd600;
+}
+.gutter-row.is-pc {
+    background: rgba(255, 214, 0, 0.15) !important;
+}
+
+.gutter-num {
+    color: #4b5563;
+    font-size: 0.9em;
+    min-width: 16px;
+    text-align: right;
+}
+.gutter-row.is-pc .gutter-num { color: #ffd600; font-weight: 700; }
 
 .editor-container {
     flex: 1;
@@ -213,10 +267,10 @@ pre#highlighting, textarea#asmCode {
     top: 0; left: 0;
     width: 100%; height: 100%;
     margin: 0;
-    padding: 12px 14px;
+    padding: 10px 12px;
     font-family: var(--font-mono);
     font-size: 13px;
-    line-height: 20px;
+    line-height: var(--line-height);
     white-space: pre;
     tab-size: 4;
     border: none;
@@ -296,7 +350,7 @@ pre#highlighting {
 }
 .v-btn.latched span { color: #332200; font-weight: 700; }
 
-/* ПЕРЕКЛЮЧАТЕЛЬ ПОРТОВ B, C, D */
+/* ПЕРЕКЛЮЧАТЕЛЬ ПОРТОВ */
 .port-header-row {
     display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
 }
@@ -324,7 +378,11 @@ pre#highlighting {
     background: #252b3b; border: 2px solid #3b455d; transition: all .1s ease;
 }
 .led-light.active-led-yellow { background: #ffd600; box-shadow: 0 0 16px #ffd600, 0 0 4px #fff; border-color: #fff; }
-.led-light.active-led-green { background: #00e676; box-shadow: 0 0 16px #00e676, 0 0 4px #fff; border-color: #fff; }
+.led-light.active-led-green { 
+    background: #00e676 !important; 
+    box-shadow: 0 0 16px #00e676, 0 0 6px #fff !important; 
+    border-color: #fff !important; 
+}
 .led-label { font-size: 0.8em; color: var(--text-muted); }
 
 .led-bar { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; text-align: center; }
@@ -380,7 +438,7 @@ pre#highlighting {
     height: 110px; overflow-y: auto; color: #94a3b8; line-height: 1.35;
 }
 
-/* ================= МОБИЛЬНЫЙ РЕЖИМ (СЛАЙДЫ ТОЛЬКО НА ЭКРАНАХ МЕНЬШЕ 950px) ================= */
+/* ================= МОБИЛЬНЫЙ РЕЖИМ ================= */
 @media (max-width: 950px) {
     .nav-screens { display: flex; }
     .slider-viewport {
