@@ -26,10 +26,9 @@ const cpu = {
     labels: {},
     uartLog: "",
     error: null,
-    selectedPort: 'D' // Текущий порт для линейки светодиодов
+    selectedPort: 'D'
 };
 
-// 8 Кнопок стенда
 const vButtons = [
     { id: 'K1', port: 'D', pin: 2, pressed: false },
     { id: 'K2', port: 'D', pin: 3, pressed: false },
@@ -41,13 +40,13 @@ const vButtons = [
     { id: 'K8', port: 'B', pin: 5, pressed: false }
 ];
 
-/* ================= 1. ПАРСЕР И РЕГИСТРОВЫЕ ПСЕВДОНИМЫ ================= */
+/* ================= 1. ПАРСЕР И РЕГИСТРЫ XL, XH... ================= */
 
-// Распознавание регистров и алиасов XL, XH, YL, YH, ZL, ZH
 function parseReg(arg) {
     if (!arg) return 0;
     arg = arg.trim().toLowerCase();
 
+    // Псевдонимы регистров AVR
     const aliases = {
         'xl': 26, 'xh': 27,
         'yl': 28, 'yh': 29,
@@ -109,7 +108,7 @@ function parseProgram(text) {
         const argsStr = line.substring(tokens[0].length).trim();
         const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
 
-        // Проверка: LDI работает только с R16..R31 (XL=26, XH=27 - допустимы!)
+        // Проверка: LDI работает только с R16..R31 (XL=26, XH=27 разрешены!)
         if (op === 'ldi' && args.length >= 1) {
             const regNum = parseReg(args[0]);
             if (regNum < 16) {
@@ -125,7 +124,6 @@ function parseProgram(text) {
 /* ================= 2. ВЫПОЛНЕНИЕ КОМАНД (БЕЗ ALERT) ================= */
 
 function cpuStep() {
-    // ЕСЛИ ОШИБКА — ВЫКЛЮЧАЕМСЯ БЕЗ ЗАВИСАНИЯ!
     if (cpu.error) {
         haltExecution();
         updateUI();
@@ -488,12 +486,11 @@ function renderHardware() {
     if (cpu.selectedPort === 'B') currentVal = cpu.ram[IO.PORTB];
     if (cpu.selectedPort === 'C') currentVal = cpu.ram[IO.PORTC];
 
-    const container = document.getElementById('portLedsBar');
-    if (container && container.children.length === 8) {
-        for (let i = 7; i >= 0; i--) {
-            const led = container.children[7 - i].querySelector('.led-light');
-            const bitName = container.children[7 - i].querySelector('.led-bit-name');
-            bitName.textContent = `${cpu.selectedPort}${i}`;
+    for (let i = 7; i >= 0; i--) {
+        const led = document.getElementById(`ledPin${i}`);
+        const bitLbl = document.getElementById(`lblPin${i}`);
+        if (led && bitLbl) {
+            bitLbl.textContent = `${cpu.selectedPort}${i}`;
             const isOn = (currentVal & (1 << i)) !== 0;
             led.className = 'led-light ' + (isOn ? 'active-led-green' : '');
         }
@@ -512,7 +509,7 @@ function clearUart() {
     renderHardware();
 }
 
-/* ================= 4. ЗАПУСК И ОСТАНОВ ================= */
+/* ================= 4. ЗАПУСК И СБРОС ================= */
 
 function haltExecution() {
     cpu.running = false;
@@ -524,7 +521,7 @@ function haltExecution() {
 }
 
 function toggleRun() {
-    if (cpu.error) return; // Не запускать при ошибке!
+    if (cpu.error) return;
     
     cpu.running = !cpu.running;
     const btn = document.getElementById('btnRun');
@@ -590,23 +587,14 @@ function scrollToSlide(index) {
     btns.forEach((b, i) => b.classList.toggle('active', i === index));
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const viewport = document.getElementById('sliderViewport');
-    viewport.addEventListener('scroll', () => {
-        const index = Math.round(viewport.scrollLeft / viewport.clientWidth);
-        const btns = document.querySelectorAll('.nav-screen-btn');
-        btns.forEach((b, i) => b.classList.toggle('active', i === index));
-    });
-});
-
-/* ================= 5. ПОДСВЕТКА СИНТАКСИСА НА ЛЕТУ ================= */
+/* ================= 5. ПОДСВЕТКА СИНТАКСИСА ================= */
 
 const KNOWN_OPS = new Set([
     'ldi', 'mov', 'add', 'adc', 'sub', 'subi', 'inc', 'dec', 'and', 'andi',
     'or', 'ori', 'eor', 'clr', 'ser', 'cpi', 'cp', 'tst', 'swap', 'ror',
     'sbi', 'cbi', 'bst', 'bld', 'sbrs', 'sbrc', 'sec', 'clc', 'sez', 'clz',
     'st', 'ld', 'push', 'pop', 'jmp', 'rjmp', 'breq', 'brne', 'brcs', 'brcc',
-    'brts', 'brtc', 'call', 'ret', 'in', 'out', 'nop'
+    'call', 'ret', 'in', 'out', 'nop'
 ]);
 
 function highlightCode(rawText) {
@@ -621,16 +609,11 @@ function highlightCode(rawText) {
             comment = line.substring(commentIdx);
         }
 
-        // Окрашивание кода
         let processedCode = codePart
-            // Метки (m:, loop:)
             .replace(/^(\s*)([a-zA-Z0-9_]+:)/g, '$1<span class="syn-lbl">$2</span>')
-            // Директивы (.include, .db)
             .replace(/(\.[a-zA-Z0-9_]+)/g, '<span class="syn-dir">$1</span>')
-            // Числа (0xFA, 250, 0b1010)
             .replace(/\b(0x[0-9a-fA-F]+|0b[01]+|\d+)\b/g, '<span class="syn-num">$1</span>');
 
-        // Команды (мнемоники)
         processedCode = processedCode.replace(/\b([a-zA-Z]+)\b/g, (match) => {
             if (KNOWN_OPS.has(match.toLowerCase())) {
                 return `<span class="syn-op">${match}</span>`;
@@ -638,9 +621,7 @@ function highlightCode(rawText) {
             return match;
         });
 
-        // Комментарии (зелёные)
         const processedComment = comment ? `<span class="syn-com">${escapeHtml(comment)}</span>` : '';
-
         return processedCode + processedComment;
     });
 
@@ -655,7 +636,6 @@ function updateSyntax() {
     const code = document.getElementById('asmCode').value;
     document.getElementById('highlightingContent').innerHTML = highlightCode(code) + '\n';
     
-    // Номера строк
     const linesCount = code.split('\n').length;
     let nums = '';
     for (let i = 1; i <= linesCount; i++) nums += i + '\n';
@@ -893,7 +873,6 @@ function loadSelectedExample() {
     if (PROGRAMS[key]) {
         document.getElementById('asmCode').value = PROGRAMS[key].code;
         
-        // Если выбран чистый файл — скрываем подсказку!
         if (key === 'empty' || !PROGRAMS[key].hint) {
             banner.style.display = 'none';
         } else {
@@ -909,46 +888,19 @@ function loadSelectedExample() {
 /* ================= 8. СТАРТ ================= */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Генерация 8 светодиодов
-    const ledBar = document.getElementById('portLedsBar');
-    for (let i = 7; i >= 0; i--) {
-        const col = document.createElement('div');
-        col.className = 'led-col';
-        col.innerHTML = `
-            <div class="led-light" id="ledPortPin${i}"></div>
-            <span class="led-bit-name">D${i}</span>
-        `;
-        ledBar.appendChild(col);
-    }
-
-    // Генерация кнопок K1..K8 с фиксацией
-    const btnBox = document.getElementById('buttonMatrix');
-    vButtons.forEach(btn => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.id = 'vbtn_' + btn.id;
-        b.className = 'v-btn';
-        b.innerHTML = `${btn.id} <span>P${btn.port}${btn.pin}</span>`;
-        b.onclick = () => toggleVButton(btn.id);
-        btnBox.appendChild(b);
-    });
-
     const txtArea = document.getElementById('asmCode');
     const highlighting = document.getElementById('highlighting');
 
-    // Подсветка и пересборка при вводе
     txtArea.addEventListener('input', () => {
         updateSyntax();
         cpuReset();
     });
 
-    // Синхронизация прокрутки текста и цветного слоя
     txtArea.addEventListener('scroll', () => {
         highlighting.scrollTop = txtArea.scrollTop;
         highlighting.scrollLeft = txtArea.scrollLeft;
         document.getElementById('lineNumbers').scrollTop = txtArea.scrollTop;
     });
 
-    // Загрузка начальной программы
     loadSelectedExample();
 });
