@@ -18,12 +18,12 @@
             <div class="toolbar-controls">
                 <div class="select-wrapper">
                     <select id="exampleSelector" onchange="loadSelectedExample()">
-                        <option value="">-- Выбрать пример из методички --</option>
-                        <option value="led_blink">Лаба 4: Бегущий счётчик (Порт D)</option>
-                        <option value="button_led">Лаба 4: Кнопка K1 зажигает диод L (PB5)</option>
-                        <option value="fibonacci">Лаба 3: Числа Фибоначчи в ОЗУ</option>
-                        <option value="uart_tx">Лаба 6: Передача строки по UART</option>
-                        <option value="alu_flags">Лаба 2: Арифметика и Флаги SREG</option>
+                        <option value="">-- Готовые примеры программ --</option>
+                        <option value="led_blink">Бегущий огонёк (Порт D)</option>
+                        <option value="button_led">Кнопка включает светодиод (PULL-UP)</option>
+                        <option value="fibonacci">Числа Фибоначчи в памяти (ОЗУ)</option>
+                        <option value="uart_tx">Отправка текста в терминал (UART)</option>
+                        <option value="alu_flags">Арифметика и флаги переполнения</option>
                     </select>
                 </div>
 
@@ -72,14 +72,13 @@
                 </div>
             </section>
 
-            <!-- ПАНЕЛЬ 2: ВИРТУАЛЬНАЯ ПЛАТА (СВЕТОДИОДЫ И КНОПКИ) -->
+            <!-- ПАНЕЛЬ 2: ВИРТУАЛЬНАЯ ПЛАТА -->
             <section class="panel board-panel" id="boardTab">
                 <div class="panel-header">
                     <h2>💡 Интерактивная плата ввода-вывода</h2>
                 </div>
                 
                 <div class="board-container">
-                    <!-- Светодиод L (Arduino PB5) -->
                     <div class="board-card uno-led-card">
                         <div class="card-title">Светодиод Arduino Uno [L] (Вывод PB5)</div>
                         <div class="led-wrapper single-led">
@@ -88,24 +87,17 @@
                         </div>
                     </div>
 
-                    <!-- Линейка светодиодов Порта D -->
                     <div class="board-card">
                         <div class="card-title">Линейка светодиодов: Порт D (PD7...PD0)</div>
-                        <div class="led-bar" id="portDLeds">
-                            <!-- Генерируется скриптом -->
-                        </div>
+                        <div class="led-bar" id="portDLeds"></div>
                     </div>
 
-                    <!-- Кнопочный модуль K1..K8 -->
                     <div class="board-card">
                         <div class="card-title">Кнопочный модуль (PB0..PB5 / PD2..PD3)</div>
                         <p class="board-note">В режиме PULL-UP нажатая кнопка выдаёт логический 0.</p>
-                        <div class="btn-matrix" id="buttonMatrix">
-                            <!-- Генерируется скриптом -->
-                        </div>
+                        <div class="btn-matrix" id="buttonMatrix"></div>
                     </div>
 
-                    <!-- Монитор Serial/UART (Лаба 6) -->
                     <div class="board-card uart-card">
                         <div class="uart-header">
                             <div class="card-title">Терминал UART (UDR0 / 9600 baud)</div>
@@ -116,21 +108,17 @@
                 </div>
             </section>
 
-            <!-- ПАНЕЛЬ 3: РЕГИСТРЫ И ФЛАГИ (SREG) -->
+            <!-- ПАНЕЛЬ 3: РЕГИСТРЫ И SREG -->
             <section class="panel cpu-panel" id="cpuTab">
                 <div class="panel-header">
                     <h2>⚙️ Регистры процессора</h2>
                 </div>
 
-                <!-- Флаги регистра SREG -->
                 <div class="sreg-box">
                     <div class="sreg-title">Регистр состояния SREG [I T H S V N Z C]</div>
-                    <div class="flags-grid" id="flagsGrid">
-                        <!-- Флаги -->
-                    </div>
+                    <div class="flags-grid" id="flagsGrid"></div>
                 </div>
 
-                <!-- Служебные указатели -->
                 <div class="pointers-row">
                     <div class="pointer-badge"><span>PC:</span> <b id="valPC">0x0000</b></div>
                     <div class="pointer-badge"><span>SP:</span> <b id="valSP">0x08FF</b></div>
@@ -139,15 +127,12 @@
                     <div class="pointer-badge"><span>Z:</span> <b id="valZ">0x0000</b></div>
                 </div>
 
-                <!-- 32 Регистра РОН -->
                 <div class="registers-container">
-                    <div class="registers-grid" id="registersGrid">
-                        <!-- 32 ячейки R0-R31 -->
-                    </div>
+                    <div class="registers-grid" id="registersGrid"></div>
                 </div>
             </section>
 
-            <!-- ПАНЕЛЬ 4: ДАМП ОЗУ И СТЕК -->
+            <!-- ПАНЕЛЬ 4: ДАМП ОЗУ -->
             <section class="panel mem-panel" id="memTab">
                 <div class="panel-header">
                     <h2>💾 Оперативная память (SRAM 0x0100+)</h2>
