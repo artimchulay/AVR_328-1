@@ -6,10 +6,17 @@
     --text-main: #e2e8f0;
     --text-muted: #8493a8;
     
-    --accent: #00e676;        /* Зелёный свет */
-    --accent-blue: #2979ff;   /* Синий акцент */
-    --accent-gold: #ffb300;   /* Янтарный свет для нажатых кнопок */
+    --accent: #00e676;
+    --accent-blue: #2979ff;
+    --accent-gold: #ffb300;
     --accent-red: #ff3d00;
+    
+    /* ЦВЕТА ПОДСВЕТКИ СИНТАКСИСА */
+    --syn-op: #38bdf8;     /* Синий: команды (ldi, mov, add) */
+    --syn-com: #4ade80;    /* Зелёный: комментарии (; text) */
+    --syn-lbl: #fb923c;    /* Оранжевый: метки (m:, loop:) */
+    --syn-dir: #c084fc;    /* Фиолетовый: директивы (.include) */
+    --syn-num: #fcd34d;    /* Жёлтый: константы и числа */
     
     --font-mono: 'Consolas', 'Courier New', monospace;
     --font-ui: system-ui, -apple-system, sans-serif;
@@ -19,7 +26,7 @@
 html, body {
     width: 100%;
     height: 100%;
-    overflow: hidden; /* Никакой вертикальной прокрутки у всего окна */
+    overflow: hidden;
     background: var(--bg-dark);
     color: var(--text-main);
     font-family: var(--font-ui);
@@ -33,7 +40,7 @@ html, body {
     width: 100vw;
 }
 
-/* ================= 1. КОМПАКТНАЯ ВЕРХНЯЯ ПАНЕЛЬ ================= */
+/* ================= 1. ШАПКА ================= */
 .toolbar {
     background: var(--panel-bg);
     border-bottom: 1px solid var(--border-color);
@@ -96,7 +103,6 @@ html, body {
     cursor: pointer;
 }
 
-/* Вкладки переключения экранов */
 .nav-screens {
     display: flex;
     gap: 4px;
@@ -138,7 +144,7 @@ html, body {
 .hint-icon { font-size: 1.1em; }
 .hint-text b { color: var(--accent-gold); }
 
-/* ================= 3. ГОРИЗОНТАЛЬНЫЙ СЛАЙДЕР ================= */
+/* ================= 3. СЛАЙДЕР ================= */
 .slider-viewport {
     flex: 1;
     width: 100%;
@@ -180,39 +186,77 @@ html, body {
 .slide-header h2 { font-size: 0.9em; font-weight: 700; color: #fff; }
 .editor-status { font-size: 0.78em; color: var(--text-muted); display: flex; gap: 10px; }
 
-/* ================= ЭКРАН 1: РЕДАКТОР ================= */
+/* ================= ЭКРАН 1: РЕДАКТОР С ПОДСВЕТКОЙ ================= */
 .editor-wrapper {
     flex: 1;
     display: flex;
     background: #0b0d13;
     overflow: hidden;
+    position: relative;
 }
 .line-numbers {
     width: 38px;
     padding: 10px 4px;
     text-align: right;
     font-family: var(--font-mono);
-    font-size: 0.86em;
+    font-size: 0.88em;
     color: #4b5563;
     background: #08090d;
     user-select: none;
     line-height: 1.5;
     border-right: 1px solid #1a1e28;
+    z-index: 5;
 }
-textarea#asmCode {
+
+.editor-container {
     flex: 1;
-    background: transparent;
-    color: #f1f5f9;
-    border: none;
-    outline: none;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Синхронизированный слой подсветки и слой ввода */
+pre#highlighting, textarea#asmCode {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
     padding: 10px 12px;
     font-family: var(--font-mono);
     font-size: 0.88em;
     line-height: 1.5;
-    resize: none;
     white-space: pre;
+    tab-size: 4;
+    border: none;
+    outline: none;
+}
+
+/* Прозрачный textarea для ввода текста */
+textarea#asmCode {
+    background: transparent;
+    color: transparent;
+    caret-color: #fff;
+    resize: none;
+    z-index: 2;
     user-select: text;
 }
+
+/* Цветной слой под текстом */
+pre#highlighting {
+    background: transparent;
+    color: #e2e8f0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* СТИЛИ СИНТАКСИСА */
+.syn-op { color: var(--syn-op); font-weight: 700; }
+.syn-com { color: var(--syn-com); font-style: italic; }
+.syn-lbl { color: var(--syn-lbl); font-weight: 700; }
+.syn-dir { color: var(--syn-dir); }
+.syn-num { color: var(--syn-num); }
 
 /* ================= ЭКРАН 2: ПЛАТА ================= */
 .board-scroll-area {
@@ -233,44 +277,35 @@ textarea#asmCode {
 .board-note { font-size: 0.75em; color: var(--text-muted); margin-bottom: 8px; }
 
 /* КНОПКИ С ФИКСАЦИЕЙ */
-.btn-matrix {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-}
+.btn-matrix { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .v-btn {
-    background: #151922;
-    border: 2px solid #334155;
-    color: #e2e8f0;
-    padding: 12px 6px;
-    border-radius: 8px;
-    font-size: 0.82em;
-    font-weight: 800;
-    cursor: pointer;
-    transition: all .15s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
+    background: #151922; border: 2px solid #334155; color: #e2e8f0;
+    padding: 12px 6px; border-radius: 8px; font-size: 0.82em; font-weight: 800;
+    cursor: pointer; transition: all .15s ease; display: flex; flex-direction: column;
+    align-items: center; gap: 2px;
 }
 .v-btn span { font-size: 0.68em; font-weight: 400; color: var(--text-muted); }
-
-/* Состояние: НАЖАТА И ЗАФИКСИРОВАНА */
 .v-btn.latched {
-    background: var(--accent-gold);
-    color: #000;
-    border-color: #fff;
-    transform: scale(0.96);
-    box-shadow: 0 0 14px rgba(255, 179, 0, 0.6);
+    background: var(--accent-gold); color: #000; border-color: #fff;
+    transform: scale(0.96); box-shadow: 0 0 14px rgba(255, 179, 0, 0.6);
 }
 .v-btn.latched span { color: #332200; font-weight: 700; }
 
-/* Светодиоды */
+/* Переключатель портов светодиодов */
+.port-header-row {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+}
+.port-selector-btns { display: flex; gap: 4px; }
+.port-btn {
+    background: #151922; border: 1px solid var(--border-color); color: var(--text-muted);
+    padding: 3px 8px; border-radius: 5px; font-size: 0.75em; font-weight: 700; cursor: pointer;
+}
+.port-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+
 .single-led { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .led-light {
     width: 22px; height: 22px; border-radius: 50%;
-    background: #252b3b; border: 2px solid #3b455d;
-    transition: all .1s ease;
+    background: #252b3b; border: 2px solid #3b455d; transition: all .1s ease;
 }
 .led-light.active-led-yellow { background: #ffd600; box-shadow: 0 0 16px #ffd600, 0 0 4px #fff; border-color: #fff; }
 .led-light.active-led-green { background: #00e676; box-shadow: 0 0 16px #00e676, 0 0 4px #fff; border-color: #fff; }
@@ -291,20 +326,9 @@ textarea#asmCode {
 
 /* ================= ЭКРАН 3: ПРОЦЕССОР ================= */
 .cpu-scroll-area {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;
 }
-.cpu-subcard {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 8px 10px;
-}
-
+.cpu-subcard { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 10px; }
 .flags-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .flag-cell {
     background: #141822; border: 1px solid var(--border-color); padding: 3px;
@@ -339,7 +363,7 @@ textarea#asmCode {
     height: 110px; overflow-y: auto; color: #94a3b8; line-height: 1.35;
 }
 
-/* ================= АДАПТАЦИЯ ПОД МАЛЕНЬКИЕ ЭКРАНЫ ================= */
+/* ================= МОБИЛЬНАЯ АДАПТАЦИЯ ================= */
 @media (max-width: 600px) {
     .toolbar { flex-direction: column; align-items: stretch; gap: 6px; padding: 6px 8px; }
     .toolbar-left, .toolbar-center { justify-content: space-between; }
