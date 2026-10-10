@@ -8,17 +8,17 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- ЗАКРЕПЛЁННАЯ ВЕРХНЯЯ ПАНЕЛЬ -->
+        <!-- ЗАКРЕПЛЁННАЯ ВЕРХНЯЯ СТРОКА УПРАВЛЕНИЯ -->
         <header class="toolbar">
             <div class="toolbar-left">
                 <div class="logo">⚡ <span>AVR Studio</span></div>
                 <div class="select-wrapper">
                     <select id="exampleSelector" onchange="loadSelectedExample()">
                         <option value="empty">📄 Новый чистый файл</option>
-                        <option value="btn_counter">Счётчик по кнопкам (K1: +1, K2: -1)</option>
+                        <option value="btn_counter" selected>Счётчик по кнопкам (K1: +1, K2: -1)</option>
                         <option value="led_blink">Бегущий огонёк (Порт D)</option>
                         <option value="button_led">Кнопка включает светодиод L</option>
-                        <option value="fibonacci" selected>Числа Фибоначчи в памяти</option>
+                        <option value="fibonacci">Числа Фибоначчи в памяти</option>
                         <option value="uart_tx">Отправка текста в терминал (UART)</option>
                         <option value="alu_flags">Арифметика и флаги переполнения</option>
                     </select>
@@ -26,13 +26,13 @@
             </div>
 
             <div class="toolbar-center">
-                <button id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Шаг (F11)">
+                <button type="button" id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Шаг (F11)">
                     <span>⏭</span> Шаг
                 </button>
-                <button id="btnRun" class="btn btn-run" onclick="toggleRun()">
+                <button type="button" id="btnRun" class="btn btn-run" onclick="toggleRun()">
                     <span id="runIcon">▶</span> <span id="runText">Пуск</span>
                 </button>
-                <button id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сбросить процессор">
+                <button type="button" id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сбросить процессор">
                     <span>🔄</span> Сброс
                 </button>
                 
@@ -42,11 +42,11 @@
                 </div>
             </div>
 
-            <!-- НАВИГАЦИЯ МЕЖДУ СЛАЙДАМИ -->
+            <!-- КНОПКИ ПЕРЕКЛЮЧЕНИЯ ДЛЯ ТЕЛЕФОНОВ -->
             <nav class="nav-screens">
-                <button class="nav-screen-btn active" onclick="scrollToSlide(0)">📝 Код</button>
-                <button class="nav-screen-btn" onclick="scrollToSlide(1)">💡 Плата</button>
-                <button class="nav-screen-btn" onclick="scrollToSlide(2)">⚙️ Процессор</button>
+                <button type="button" class="nav-screen-btn active" onclick="scrollToSlide(0)">📝 Код</button>
+                <button type="button" class="nav-screen-btn" onclick="scrollToSlide(1)">💡 Плата</button>
+                <button type="button" class="nav-screen-btn" onclick="scrollToSlide(2)">⚙️ Процессор</button>
             </nav>
         </header>
 
@@ -56,11 +56,11 @@
             <div class="hint-text" id="hintText">Инструкция к выбранной программе...</div>
         </div>
 
-        <!-- ГОРИЗОНТАЛЬНЫЙ СЛАЙДЕР С ТРЕМЯ ЭКРАНАМИ -->
+        <!-- ОСНОВНАЯ ЗОНА (НА ПК: 3 КОЛОНКИ, НА ТЕЛЕФОНЕ: СЛАЙДЫ) -->
         <main class="slider-viewport" id="sliderViewport">
             <div class="slider-track">
                 
-                <!-- ЭКРАН 1: РЕДАКТОР С ПОДСВЕТКОЙ СИНТАКСИСА -->
+                <!-- ПАНЕЛЬ 1: РЕДАКТОР С ЦВЕТНОЙ ПОДСВЕТКОЙ -->
                 <section class="slide-panel editor-slide">
                     <div class="slide-header">
                         <h2>📝 Редактор ассемблера (.asm)</h2>
@@ -72,26 +72,33 @@
                     <div class="editor-wrapper">
                         <div class="line-numbers" id="lineNumbers">1</div>
                         <div class="editor-container">
-                            <!-- Слой с цветной подсветкой -->
                             <pre id="highlighting" aria-hidden="true"><code id="highlightingContent"></code></pre>
-                            <!-- Слой ввода текста -->
                             <textarea id="asmCode" spellcheck="false" placeholder="Пишите код на ассемблере здесь..."></textarea>
                         </div>
                     </div>
                 </section>
 
-                <!-- ЭКРАН 2: ИНТЕРАКТИВНАЯ ПЛАТА -->
+                <!-- ПАНЕЛЬ 2: ПЛАТА СО СВЕТОДИОДАМИ И КНОПКАМИ -->
                 <section class="slide-panel board-slide">
                     <div class="slide-header">
                         <h2>💡 Интерактивная плата ввода-вывода</h2>
-                        <small style="color:var(--text-muted);">Кнопки фиксируются при нажатии</small>
+                        <small style="color:var(--text-muted);">Кнопки с фиксацией</small>
                     </div>
                     <div class="board-scroll-area">
-                        <!-- Кнопочный модуль -->
+                        <!-- Кнопки K1..K8 (вшиты в HTML) -->
                         <div class="board-card">
                             <div class="card-title">Кнопочный модуль с фиксацией (K1..K8)</div>
-                            <p class="board-note">Нажмите кнопку, чтобы зажать её в положение 0 (PULL-UP). Нажмите ещё раз, чтобы отжать.</p>
-                            <div class="btn-matrix" id="buttonMatrix"></div>
+                            <p class="board-note">Кликните кнопку, чтобы зажать (0 на входе). Кликните ещё раз, чтобы отжать (1).</p>
+                            <div class="btn-matrix">
+                                <button type="button" class="v-btn" id="vbtn_K1" onclick="toggleVButton('K1')">K1 <span>PD2</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K2" onclick="toggleVButton('K2')">K2 <span>PD3</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K3" onclick="toggleVButton('K3')">K3 <span>PB0</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K4" onclick="toggleVButton('K4')">K4 <span>PB1</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K5" onclick="toggleVButton('K5')">K5 <span>PB2</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K6" onclick="toggleVButton('K6')">K6 <span>PB3</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K7" onclick="toggleVButton('K7')">K7 <span>PB4</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K8" onclick="toggleVButton('K8')">K8 <span>PB5</span></button>
+                            </div>
                         </div>
 
                         <!-- Светодиод L -->
@@ -103,34 +110,43 @@
                             </div>
                         </div>
 
-                        <!-- Линейка светодиодов с выбором порта -->
+                        <!-- Линейка светодиодов с выбором портов -->
                         <div class="board-card">
                             <div class="port-header-row">
                                 <div class="card-title" id="ledPortTitle">Линейка светодиодов (Порт D)</div>
                                 <div class="port-selector-btns">
-                                    <button class="port-btn active" id="btnPortD" onclick="selectLedPort('D')">Порт D</button>
-                                    <button class="port-btn" id="btnPortB" onclick="selectLedPort('B')">Порт B</button>
-                                    <button class="port-btn" id="btnPortC" onclick="selectLedPort('C')">Порт C</button>
+                                    <button type="button" class="port-btn active" id="btnPortD" onclick="selectLedPort('D')">Порт D</button>
+                                    <button type="button" class="port-btn" id="btnPortB" onclick="selectLedPort('B')">Порт B</button>
+                                    <button type="button" class="port-btn" id="btnPortC" onclick="selectLedPort('C')">Порт C</button>
                                 </div>
                             </div>
-                            <div class="led-bar" id="portLedsBar"></div>
+                            <div class="led-bar" id="portLedsBar">
+                                <div class="led-col"><div class="led-light" id="ledPin7"></div><span class="led-bit-name" id="lblPin7">D7</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin6"></div><span class="led-bit-name" id="lblPin6">D6</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin5"></div><span class="led-bit-name" id="lblPin5">D5</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin4"></div><span class="led-bit-name" id="lblPin4">D4</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin3"></div><span class="led-bit-name" id="lblPin3">D3</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin2"></div><span class="led-bit-name" id="lblPin2">D2</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin1"></div><span class="led-bit-name" id="lblPin1">D1</span></div>
+                                <div class="led-col"><div class="led-light" id="ledPin0"></div><span class="led-bit-name" id="lblPin0">D0</span></div>
+                            </div>
                         </div>
 
-                        <!-- Монитор UART -->
+                        <!-- Терминал UART -->
                         <div class="board-card uart-card">
                             <div class="uart-header">
                                 <div class="card-title">Терминал UART (UDR0)</div>
-                                <button class="btn-link" onclick="clearUart()">Очистить</button>
+                                <button type="button" class="btn-link" onclick="clearUart()">Очистить</button>
                             </div>
                             <pre class="uart-console" id="uartTerminal">UART готов к приёму данных...</pre>
                         </div>
                     </div>
                 </section>
 
-                <!-- ЭКРАН 3: РЕГИСТРЫ, ФЛАГИ И ОЗУ -->
+                <!-- ПАНЕЛЬ 3: РЕГИСТРЫ И ДАМПЫ -->
                 <section class="slide-panel cpu-slide">
                     <div class="slide-header">
-                        <h2>⚙️ Состояние процессора и память</h2>
+                        <h2>⚙️ Регистры и память</h2>
                     </div>
                     <div class="cpu-scroll-area">
                         <div class="cpu-subcard">
