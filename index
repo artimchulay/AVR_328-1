@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AVR ATmega328P Web Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- ВЕРХНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ -->
+        <header class="toolbar">
+            <div class="toolbar-brand">
+                <span class="chip-icon">⚡</span>
+                <h1>AVR Studio Web <span>ATmega328P</span></h1>
+            </div>
+
+            <div class="toolbar-controls">
+                <div class="select-wrapper">
+                    <select id="exampleSelector" onchange="loadSelectedExample()">
+                        <option value="">-- Выбрать пример из методички --</option>
+                        <option value="led_blink">Лаба 4: Бегущий счётчик (Порт D)</option>
+                        <option value="button_led">Лаба 4: Кнопка K1 зажигает диод L (PB5)</option>
+                        <option value="fibonacci">Лаба 3: Числа Фибоначчи в ОЗУ</option>
+                        <option value="uart_tx">Лаба 6: Передача строки по UART</option>
+                        <option value="alu_flags">Лаба 2: Арифметика и Флаги SREG</option>
+                    </select>
+                </div>
+
+                <div class="btn-group">
+                    <button id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Шаг (F11)">
+                        <span>⏭</span> Шаг
+                    </button>
+                    <button id="btnRun" class="btn btn-run" onclick="toggleRun()">
+                        <span id="runIcon">▶</span> <span id="runText">Пуск</span>
+                    </button>
+                    <button id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сбросить процессор">
+                        <span>🔄</span> Сброс
+                    </button>
+                </div>
+
+                <div class="speed-control">
+                    <label for="speedRange">Скорость:</label>
+                    <input type="range" id="speedRange" min="1" max="100" value="30" oninput="updateSpeed(this.value)">
+                    <span id="speedVal">30 оп/сек</span>
+                </div>
+            </div>
+
+            <!-- МОБИЛЬНЫЕ ВКЛАДКИ -->
+            <nav class="mobile-tabs">
+                <button class="tab-btn active" onclick="switchTab('editorTab')">📝 Код</button>
+                <button class="tab-btn" onclick="switchTab('boardTab')">💡 Плата</button>
+                <button class="tab-btn" onclick="switchTab('cpuTab')">⚙️ Регистры</button>
+                <button class="tab-btn" onclick="switchTab('memTab')">💾 ОЗУ</button>
+            </nav>
+        </header>
+
+        <!-- ОСНОВНАЯ СЕТКА ЭКРАНА -->
+        <main class="workspace-grid">
+            <!-- ПАНЕЛЬ 1: РЕДАКТОР КОДА -->
+            <section class="panel editor-panel" id="editorTab">
+                <div class="panel-header">
+                    <h2>📝 Ассемблер AVR (.asm)</h2>
+                    <div class="editor-status">
+                        <span id="compilerStatus">Готов</span>
+                        <span id="cycleCounter">Такты: 0</span>
+                    </div>
+                </div>
+                <div class="editor-wrapper">
+                    <div class="line-numbers" id="lineNumbers">1</div>
+                    <textarea id="asmCode" spellcheck="false" placeholder="Пишите код на ассемблере здесь..."></textarea>
+                </div>
+            </section>
+
+            <!-- ПАНЕЛЬ 2: ВИРТУАЛЬНАЯ ПЛАТА (СВЕТОДИОДЫ И КНОПКИ) -->
+            <section class="panel board-panel" id="boardTab">
+                <div class="panel-header">
+                    <h2>💡 Интерактивная плата ввода-вывода</h2>
+                </div>
+                
+                <div class="board-container">
+                    <!-- Светодиод L (Arduino PB5) -->
+                    <div class="board-card uno-led-card">
+                        <div class="card-title">Светодиод Arduino Uno [L] (Вывод PB5)</div>
+                        <div class="led-wrapper single-led">
+                            <div class="led-light" id="ledPB5"></div>
+                            <span class="led-label">PB5 (Pin 13)</span>
+                        </div>
+                    </div>
+
+                    <!-- Линейка светодиодов Порта D -->
+                    <div class="board-card">
+                        <div class="card-title">Линейка светодиодов: Порт D (PD7...PD0)</div>
+                        <div class="led-bar" id="portDLeds">
+                            <!-- Генерируется скриптом -->
+                        </div>
+                    </div>
+
+                    <!-- Кнопочный модуль K1..K8 -->
+                    <div class="board-card">
+                        <div class="card-title">Кнопочный модуль (PB0..PB5 / PD2..PD3)</div>
+                        <p class="board-note">В режиме PULL-UP нажатая кнопка выдаёт логический 0.</p>
+                        <div class="btn-matrix" id="buttonMatrix">
+                            <!-- Генерируется скриптом -->
+                        </div>
+                    </div>
+
+                    <!-- Монитор Serial/UART (Лаба 6) -->
+                    <div class="board-card uart-card">
+                        <div class="uart-header">
+                            <div class="card-title">Терминал UART (UDR0 / 9600 baud)</div>
+                            <button class="btn-link" onclick="clearUart()">Очистить</button>
+                        </div>
+                        <pre class="uart-console" id="uartTerminal">UART готов к приёму данных...</pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ПАНЕЛЬ 3: РЕГИСТРЫ И ФЛАГИ (SREG) -->
+            <section class="panel cpu-panel" id="cpuTab">
+                <div class="panel-header">
+                    <h2>⚙️ Регистры процессора</h2>
+                </div>
+
+                <!-- Флаги регистра SREG -->
+                <div class="sreg-box">
+                    <div class="sreg-title">Регистр состояния SREG [I T H S V N Z C]</div>
+                    <div class="flags-grid" id="flagsGrid">
+                        <!-- Флаги -->
+                    </div>
+                </div>
+
+                <!-- Служебные указатели -->
+                <div class="pointers-row">
+                    <div class="pointer-badge"><span>PC:</span> <b id="valPC">0x0000</b></div>
+                    <div class="pointer-badge"><span>SP:</span> <b id="valSP">0x08FF</b></div>
+                    <div class="pointer-badge"><span>X:</span> <b id="valX">0x0000</b></div>
+                    <div class="pointer-badge"><span>Y:</span> <b id="valY">0x0000</b></div>
+                    <div class="pointer-badge"><span>Z:</span> <b id="valZ">0x0000</b></div>
+                </div>
+
+                <!-- 32 Регистра РОН -->
+                <div class="registers-container">
+                    <div class="registers-grid" id="registersGrid">
+                        <!-- 32 ячейки R0-R31 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ПАНЕЛЬ 4: ДАМП ОЗУ И СТЕК -->
+            <section class="panel mem-panel" id="memTab">
+                <div class="panel-header">
+                    <h2>💾 Оперативная память (SRAM 0x0100+)</h2>
+                </div>
+                <div class="mem-container">
+                    <div class="mem-box">
+                        <div class="mem-subhead">Область данных массивов (с адреса 0x0100)</div>
+                        <div class="mem-dump" id="ramDump"></div>
+                    </div>
+                    <div class="mem-box">
+                        <div class="mem-subhead">Область стека (от RAMEND 0x08FF вниз)</div>
+                        <div class="mem-dump" id="stackDump"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
