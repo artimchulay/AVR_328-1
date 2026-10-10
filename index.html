@@ -8,16 +8,17 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- КОМПАКТНАЯ ЗАКРЕПЛЁННАЯ ВЕРХНЯЯ ПАНЕЛЬ -->
+        <!-- ЗАКРЕПЛЁННАЯ ВЕРХНЯЯ ПАНЕЛЬ -->
         <header class="toolbar">
             <div class="toolbar-left">
                 <div class="logo">⚡ <span>AVR Studio</span></div>
                 <div class="select-wrapper">
                     <select id="exampleSelector" onchange="loadSelectedExample()">
+                        <option value="empty">📄 Новый чистый файл</option>
                         <option value="btn_counter">Счётчик по кнопкам (K1: +1, K2: -1)</option>
                         <option value="led_blink">Бегущий огонёк (Порт D)</option>
                         <option value="button_led">Кнопка включает светодиод L</option>
-                        <option value="fibonacci">Числа Фибоначчи в памяти</option>
+                        <option value="fibonacci" selected>Числа Фибоначчи в памяти</option>
                         <option value="uart_tx">Отправка текста в терминал (UART)</option>
                         <option value="alu_flags">Арифметика и флаги переполнения</option>
                     </select>
@@ -41,7 +42,7 @@
                 </div>
             </div>
 
-            <!-- НАВИГАЦИЯ МЕЖДУ ГОРИЗОНТАЛЬНЫМИ ЭКРАНАМИ -->
+            <!-- НАВИГАЦИЯ МЕЖДУ СЛАЙДАМИ -->
             <nav class="nav-screens">
                 <button class="nav-screen-btn active" onclick="scrollToSlide(0)">📝 Код</button>
                 <button class="nav-screen-btn" onclick="scrollToSlide(1)">💡 Плата</button>
@@ -49,7 +50,7 @@
             </nav>
         </header>
 
-        <!-- ПЛАШКА-ПОДСКАЗКА: КАК ЭТО РАБОТАЕТ -->
+        <!-- ПЛАШКА-ПОДСКАЗКА -->
         <div class="hint-banner" id="hintBanner">
             <span class="hint-icon">💡</span>
             <div class="hint-text" id="hintText">Инструкция к выбранной программе...</div>
@@ -59,7 +60,7 @@
         <main class="slider-viewport" id="sliderViewport">
             <div class="slider-track">
                 
-                <!-- ЭКРАН 1: РЕДАКТОР КОДА -->
+                <!-- ЭКРАН 1: РЕДАКТОР С ПОДСВЕТКОЙ СИНТАКСИСА -->
                 <section class="slide-panel editor-slide">
                     <div class="slide-header">
                         <h2>📝 Редактор ассемблера (.asm)</h2>
@@ -70,7 +71,12 @@
                     </div>
                     <div class="editor-wrapper">
                         <div class="line-numbers" id="lineNumbers">1</div>
-                        <textarea id="asmCode" spellcheck="false" placeholder="Пишите код на ассемблере здесь..."></textarea>
+                        <div class="editor-container">
+                            <!-- Слой с цветной подсветкой -->
+                            <pre id="highlighting" aria-hidden="true"><code id="highlightingContent"></code></pre>
+                            <!-- Слой ввода текста -->
+                            <textarea id="asmCode" spellcheck="false" placeholder="Пишите код на ассемблере здесь..."></textarea>
+                        </div>
                     </div>
                 </section>
 
@@ -97,10 +103,17 @@
                             </div>
                         </div>
 
-                        <!-- Линейка Порта D -->
+                        <!-- Линейка светодиодов с выбором порта -->
                         <div class="board-card">
-                            <div class="card-title">Линейка светодиодов: Порт D (PD7...PD0)</div>
-                            <div class="led-bar" id="portDLeds"></div>
+                            <div class="port-header-row">
+                                <div class="card-title" id="ledPortTitle">Линейка светодиодов (Порт D)</div>
+                                <div class="port-selector-btns">
+                                    <button class="port-btn active" id="btnPortD" onclick="selectLedPort('D')">Порт D</button>
+                                    <button class="port-btn" id="btnPortB" onclick="selectLedPort('B')">Порт B</button>
+                                    <button class="port-btn" id="btnPortC" onclick="selectLedPort('C')">Порт C</button>
+                                </div>
+                            </div>
+                            <div class="led-bar" id="portLedsBar"></div>
                         </div>
 
                         <!-- Монитор UART -->
@@ -120,13 +133,11 @@
                         <h2>⚙️ Состояние процессора и память</h2>
                     </div>
                     <div class="cpu-scroll-area">
-                        <!-- Флаги регистра состояния -->
                         <div class="cpu-subcard">
                             <div class="card-title">Регистр состояния SREG [I T H S V N Z C]</div>
                             <div class="flags-grid" id="flagsGrid"></div>
                         </div>
 
-                        <!-- Указатели -->
                         <div class="pointers-bar">
                             <div class="ptr">PC: <b id="valPC">0x0000</b></div>
                             <div class="ptr">SP: <b id="valSP">0x08FF</b></div>
@@ -135,13 +146,11 @@
                             <div class="ptr">Z: <b id="valZ">0x0000</b></div>
                         </div>
 
-                        <!-- 32 Регистра РОН -->
                         <div class="cpu-subcard">
                             <div class="card-title">Регистры общего назначения (R0...R31)</div>
                             <div class="registers-grid" id="registersGrid"></div>
                         </div>
 
-                        <!-- Дамп памяти -->
                         <div class="cpu-subcard">
                             <div class="card-title">Дамп ОЗУ (Массивы 0x0100+ и Стек 0x08FF)</div>
                             <div class="mem-dumps-row">
