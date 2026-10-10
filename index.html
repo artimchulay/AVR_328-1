@@ -15,7 +15,8 @@
                 <div class="select-wrapper">
                     <select id="exampleSelector" onchange="loadSelectedExample()">
                         <option value="empty">📄 Новый чистый файл</option>
-                        <option value="btn_counter" selected>Счётчик по кнопкам (K1: +1, K2: -1)</option>
+                        <option value="sort_ram" selected>Сортировка массива в ОЗУ (0x0100)</option>
+                        <option value="btn_counter">Счётчик по кнопкам (K3: +1, K4: -1)</option>
                         <option value="led_blink">Бегущий огонёк (Порт D)</option>
                         <option value="button_led">Кнопка включает светодиод L</option>
                         <option value="fibonacci">Числа Фибоначчи в памяти</option>
@@ -29,7 +30,7 @@
                 <button type="button" id="btnStep" class="btn btn-step" onclick="cpuStep()" title="Шаг (F11)">
                     <span>⏭</span> Шаг
                 </button>
-                <button type="button" id="btnRun" class="btn btn-run" onclick="toggleRun()">
+                <button type="button" id="btnRun" class="btn btn-run" onclick="toggleRun()" title="Пуск до останова">
                     <span id="runIcon">▶</span> <span id="runText">Пуск</span>
                 </button>
                 <button type="button" id="btnReset" class="btn btn-reset" onclick="cpuReset()" title="Сбросить процессор">
@@ -37,12 +38,12 @@
                 </button>
                 
                 <div class="speed-box">
-                    <input type="range" id="speedRange" min="1" max="100" value="30" oninput="updateSpeed(this.value)">
-                    <span id="speedVal">30 оп/с</span>
+                    <input type="range" id="speedRange" min="1" max="100" value="40" oninput="updateSpeed(this.value)">
+                    <span id="speedVal">40 оп/с</span>
                 </div>
             </div>
 
-            <!-- КНОПКИ ПЕРЕКЛЮЧЕНИЯ ДЛЯ ТЕЛЕФОНОВ -->
+            <!-- ПЕРЕКЛЮЧАТЕЛИ ЭКРАНОВ ДЛЯ СМАРТФОНОВ -->
             <nav class="nav-screens">
                 <button type="button" class="nav-screen-btn active" onclick="scrollToSlide(0)">📝 Код</button>
                 <button type="button" class="nav-screen-btn" onclick="scrollToSlide(1)">💡 Плата</button>
@@ -56,21 +57,25 @@
             <div class="hint-text" id="hintText">Инструкция к выбранной программе...</div>
         </div>
 
-        <!-- ОСНОВНАЯ ЗОНА (НА ПК: 3 КОЛОНКИ, НА ТЕЛЕФОНЕ: СЛАЙДЫ) -->
+        <!-- ОСНОВНАЯ ЗОНА -->
         <main class="slider-viewport" id="sliderViewport">
             <div class="slider-track">
                 
-                <!-- ПАНЕЛЬ 1: РЕДАКТОР С ЦВЕТНОЙ ПОДСВЕТКОЙ -->
+                <!-- ПАНЕЛЬ 1: РЕДАКТОР КОДА -->
                 <section class="slide-panel editor-slide">
                     <div class="slide-header">
-                        <h2>📝 Редактор ассемблера (.asm)</h2>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <h2>📝 Редактор ассемблера (.asm)</h2>
+                            <button type="button" class="btn-clear-code" onclick="clearEditor()" title="Очистить код">🗑️ Очистить</button>
+                        </div>
                         <div class="editor-status">
                             <span id="compilerStatus">Готов</span>
                             <span id="cycleCounter">Такты: 0</span>
                         </div>
                     </div>
                     <div class="editor-wrapper">
-                        <div class="line-numbers" id="lineNumbers">1</div>
+                        <!-- Колонка номеров строк с поддержкой точек останова 🔴 и стрелки PC ▶ -->
+                        <div class="line-gutter" id="lineGutter"></div>
                         <div class="editor-container">
                             <pre id="highlighting" aria-hidden="true"><code id="highlightingContent"></code></pre>
                             <textarea id="asmCode" spellcheck="false" placeholder="Пишите код на ассемблере здесь..."></textarea>
@@ -78,17 +83,17 @@
                     </div>
                 </section>
 
-                <!-- ПАНЕЛЬ 2: ПЛАТА СО СВЕТОДИОДАМИ И КНОПКАМИ -->
+                <!-- ПАНЕЛЬ 2: ПЛАТА -->
                 <section class="slide-panel board-slide">
                     <div class="slide-header">
                         <h2>💡 Интерактивная плата ввода-вывода</h2>
                         <small style="color:var(--text-muted);">Кнопки с фиксацией</small>
                     </div>
                     <div class="board-scroll-area">
-                        <!-- Кнопки K1..K8 (вшиты в HTML) -->
+                        <!-- Кнопки K1..K8 -->
                         <div class="board-card">
                             <div class="card-title">Кнопочный модуль с фиксацией (K1..K8)</div>
-                            <p class="board-note">Кликните кнопку, чтобы зажать (0 на входе). Кликните ещё раз, чтобы отжать (1).</p>
+                            <p class="board-note">Кликните кнопку, чтобы зажать (0 на входе). Кликните повторно, чтобы отжать (1).</p>
                             <div class="btn-matrix">
                                 <button type="button" class="v-btn" id="vbtn_K1" onclick="toggleVButton('K1')">K1 <span>PD2</span></button>
                                 <button type="button" class="v-btn" id="vbtn_K2" onclick="toggleVButton('K2')">K2 <span>PD3</span></button>
@@ -110,7 +115,7 @@
                             </div>
                         </div>
 
-                        <!-- Линейка светодиодов с выбором портов -->
+                        <!-- Линейка светодиодов -->
                         <div class="board-card">
                             <div class="port-header-row">
                                 <div class="card-title" id="ledPortTitle">Линейка светодиодов (Порт D)</div>
