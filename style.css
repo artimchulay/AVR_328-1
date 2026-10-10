@@ -1,22 +1,22 @@
 :root {
-    --bg-dark: #101319;
-    --panel-bg: #171b24;
-    --card-bg: #1f2533;
-    --border-color: #2b3347;
-    --text-main: #e2e8f0;
-    --text-muted: #8493a8;
+    --bg-dark: #0e1117;
+    --panel-bg: #151922;
+    --card-bg: #1d222e;
+    --border-color: #2b3346;
+    --text-main: #f1f5f9;
+    --text-muted: #8b9bb4;
     
     --accent: #00e676;
     --accent-blue: #2979ff;
     --accent-gold: #ffb300;
     --accent-red: #ff3d00;
     
-    /* ЦВЕТА ПОДСВЕТКИ СИНТАКСИСА */
-    --syn-op: #38bdf8;     /* Синий: команды (ldi, mov, add) */
-    --syn-com: #4ade80;    /* Зелёный: комментарии (; text) */
-    --syn-lbl: #fb923c;    /* Оранжевый: метки (m:, loop:) */
-    --syn-dir: #c084fc;    /* Фиолетовый: директивы (.include) */
-    --syn-num: #fcd34d;    /* Жёлтый: константы и числа */
+    /* СИНТАКСИС */
+    --syn-op: #38bdf8;
+    --syn-com: #4ade80;
+    --syn-lbl: #fb923c;
+    --syn-dir: #c084fc;
+    --syn-num: #fcd34d;
     
     --font-mono: 'Consolas', 'Courier New', monospace;
     --font-ui: system-ui, -apple-system, sans-serif;
@@ -30,7 +30,6 @@ html, body {
     background: var(--bg-dark);
     color: var(--text-main);
     font-family: var(--font-ui);
-    user-select: none;
 }
 
 .app-container {
@@ -44,7 +43,7 @@ html, body {
 .toolbar {
     background: var(--panel-bg);
     border-bottom: 1px solid var(--border-color);
-    padding: 6px 12px;
+    padding: 8px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -54,19 +53,19 @@ html, body {
 }
 
 .toolbar-left { display: flex; align-items: center; gap: 10px; }
-.logo { font-size: 1em; font-weight: 800; color: #fff; white-space: nowrap; }
+.logo { font-size: 1.05em; font-weight: 800; color: #fff; white-space: nowrap; }
 .logo span { color: var(--accent); }
 
 .select-wrapper select {
     background: var(--card-bg);
     color: #fff;
     border: 1px solid var(--border-color);
-    padding: 6px 10px;
+    padding: 7px 10px;
     border-radius: 6px;
     font-size: 0.85em;
     outline: none;
     cursor: pointer;
-    max-width: 260px;
+    max-width: 280px;
 }
 
 .toolbar-center { display: flex; align-items: center; gap: 6px; }
@@ -74,7 +73,7 @@ html, body {
     background: var(--card-bg);
     color: #fff;
     border: 1px solid var(--border-color);
-    padding: 6px 12px;
+    padding: 7px 12px;
     border-radius: 6px;
     cursor: pointer;
     font-weight: 600;
@@ -103,81 +102,69 @@ html, body {
     cursor: pointer;
 }
 
-.nav-screens {
-    display: flex;
-    gap: 4px;
-    background: rgba(0,0,0,0.3);
-    padding: 3px;
-    border-radius: 8px;
-    border: 1px solid var(--border-color);
-}
+.nav-screens { display: none; gap: 4px; } /* Скрыто на ПК, активно на смартфонах */
 .nav-screen-btn {
-    background: transparent;
-    border: none;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border-color);
     color: var(--text-muted);
-    padding: 5px 12px;
+    padding: 6px 12px;
     border-radius: 6px;
     font-size: 0.82em;
     font-weight: 700;
     cursor: pointer;
-    transition: all .2s;
-    white-space: nowrap;
 }
 .nav-screen-btn.active {
     background: var(--accent-blue);
     color: #fff;
-    box-shadow: 0 2px 8px rgba(41, 121, 255, 0.4);
+    border-color: var(--accent-blue);
 }
 
-/* ================= 2. ПЛАШКА-ПОДСКАЗКА ================= */
+/* ================= 2. ПОДСКАЗКА ================= */
 .hint-banner {
     background: rgba(41, 121, 255, 0.08);
     border-bottom: 1px solid rgba(41, 121, 255, 0.2);
-    padding: 6px 14px;
+    padding: 7px 16px;
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.82em;
+    font-size: 0.84em;
     color: #cbd5e1;
     flex-shrink: 0;
 }
 .hint-icon { font-size: 1.1em; }
 .hint-text b { color: var(--accent-gold); }
 
-/* ================= 3. СЛАЙДЕР ================= */
+/* ================= 3. ОСНОВНАЯ ЗОНА: НА ПК 3 КОЛОНКИ ================= */
 .slider-viewport {
     flex: 1;
-    width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scroll-snap-type: x mandatory;
-    scroll-behavior: smooth;
-    -webkit-overflow-scrolling: touch;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
 }
-.slider-viewport::-webkit-scrollbar { display: none; }
 
 .slider-track {
-    display: flex;
-    width: 300%;
+    display: grid;
+    grid-template-columns: 1.25fr 1fr 1fr; /* НА ПК ВСЕ 3 КОЛОНКИ ВИДНЫ СРАЗУ */
     height: 100%;
+    gap: 10px;
+    padding: 10px;
 }
 
 .slide-panel {
-    flex: 0 0 33.333333%;
-    width: 33.333333%;
-    height: 100%;
-    scroll-snap-align: start;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
     display: flex;
     flex-direction: column;
-    background: var(--panel-bg);
-    border-right: 1px solid var(--border-color);
+    height: 100%;
+    min-height: 0;
     overflow: hidden;
 }
 
 .slide-header {
     background: rgba(255,255,255,0.02);
     border-bottom: 1px solid var(--border-color);
-    padding: 8px 14px;
+    padding: 10px 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -186,123 +173,152 @@ html, body {
 .slide-header h2 { font-size: 0.9em; font-weight: 700; color: #fff; }
 .editor-status { font-size: 0.78em; color: var(--text-muted); display: flex; gap: 10px; }
 
-/* ================= ЭКРАН 1: РЕДАКТОР С ПОДСВЕТКОЙ ================= */
+/* ================= РЕДАКТОР С ПОДСВЕТКОЙ ================= */
 .editor-wrapper {
     flex: 1;
     display: flex;
-    background: #0b0d13;
-    overflow: hidden;
+    height: 100%;
+    min-height: 0;
+    background: #080a0f;
     position: relative;
 }
+
 .line-numbers {
-    width: 38px;
-    padding: 10px 4px;
+    width: 42px;
+    height: 100%;
+    padding: 12px 6px;
     text-align: right;
     font-family: var(--font-mono);
-    font-size: 0.88em;
+    font-size: 13px;
+    line-height: 20px;
     color: #4b5563;
-    background: #08090d;
+    background: #06070a;
     user-select: none;
-    line-height: 1.5;
     border-right: 1px solid #1a1e28;
-    z-index: 5;
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
 .editor-container {
     flex: 1;
+    height: 100%;
+    min-height: 0;
     position: relative;
     overflow: hidden;
 }
 
-/* Синхронизированный слой подсветки и слой ввода */
 pre#highlighting, textarea#asmCode {
+    box-sizing: border-box;
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
     margin: 0;
-    padding: 10px 12px;
+    padding: 12px 14px;
     font-family: var(--font-mono);
-    font-size: 0.88em;
-    line-height: 1.5;
+    font-size: 13px;
+    line-height: 20px;
     white-space: pre;
     tab-size: 4;
     border: none;
     outline: none;
+    overflow: auto;
 }
 
-/* Прозрачный textarea для ввода текста */
 textarea#asmCode {
-    background: transparent;
-    color: transparent;
-    caret-color: #fff;
+    background: transparent !important;
+    color: transparent !important;
+    caret-color: #38bdf8 !important;
     resize: none;
     z-index: 2;
     user-select: text;
 }
 
-/* Цветной слой под текстом */
 pre#highlighting {
     background: transparent;
     color: #e2e8f0;
-    overflow: hidden;
     pointer-events: none;
     z-index: 1;
 }
 
-/* СТИЛИ СИНТАКСИСА */
 .syn-op { color: var(--syn-op); font-weight: 700; }
 .syn-com { color: var(--syn-com); font-style: italic; }
 .syn-lbl { color: var(--syn-lbl); font-weight: 700; }
 .syn-dir { color: var(--syn-dir); }
 .syn-num { color: var(--syn-num); }
 
-/* ================= ЭКРАН 2: ПЛАТА ================= */
+/* ================= ПЛАТА ВВОДА-ВЫВОДА ================= */
 .board-scroll-area {
     flex: 1;
+    height: 100%;
     overflow-y: auto;
     padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
 }
+
 .board-card {
     background: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 12px;
 }
-.card-title { font-size: 0.85em; font-weight: 700; color: #fff; margin-bottom: 6px; }
-.board-note { font-size: 0.75em; color: var(--text-muted); margin-bottom: 8px; }
+.card-title { font-size: 0.86em; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.board-note { font-size: 0.75em; color: var(--text-muted); margin-bottom: 10px; }
 
-/* КНОПКИ С ФИКСАЦИЕЙ */
-.btn-matrix { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.v-btn {
-    background: #151922; border: 2px solid #334155; color: #e2e8f0;
-    padding: 12px 6px; border-radius: 8px; font-size: 0.82em; font-weight: 800;
-    cursor: pointer; transition: all .15s ease; display: flex; flex-direction: column;
-    align-items: center; gap: 2px;
+/* КНОПКИ K1..K8 */
+.btn-matrix {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
 }
-.v-btn span { font-size: 0.68em; font-weight: 400; color: var(--text-muted); }
+.v-btn {
+    background: #141822;
+    border: 2px solid #334155;
+    color: #e2e8f0;
+    padding: 12px 4px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all .15s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.v-btn span { font-size: 0.7em; font-weight: 400; color: var(--text-muted); }
 .v-btn.latched {
-    background: var(--accent-gold); color: #000; border-color: #fff;
-    transform: scale(0.96); box-shadow: 0 0 14px rgba(255, 179, 0, 0.6);
+    background: var(--accent-gold);
+    color: #000;
+    border-color: #fff;
+    box-shadow: 0 0 14px rgba(255, 179, 0, 0.6);
 }
 .v-btn.latched span { color: #332200; font-weight: 700; }
 
-/* Переключатель портов светодиодов */
+/* ПЕРЕКЛЮЧАТЕЛЬ ПОРТОВ B, C, D */
 .port-header-row {
-    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
 }
 .port-selector-btns { display: flex; gap: 4px; }
 .port-btn {
-    background: #151922; border: 1px solid var(--border-color); color: var(--text-muted);
-    padding: 3px 8px; border-radius: 5px; font-size: 0.75em; font-weight: 700; cursor: pointer;
+    background: #141822;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 0.78em;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .15s ease;
 }
-.port-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+.port-btn.active {
+    background: var(--accent-blue);
+    color: #fff;
+    border-color: var(--accent-blue);
+}
 
-.single-led { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.single-led { display: flex; align-items: center; gap: 8px; }
 .led-light {
     width: 22px; height: 22px; border-radius: 50%;
     background: #252b3b; border: 2px solid #3b455d; transition: all .1s ease;
@@ -312,61 +328,80 @@ pre#highlighting {
 .led-label { font-size: 0.8em; color: var(--text-muted); }
 
 .led-bar { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; text-align: center; }
-.led-col { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.led-col .led-light { width: 20px; height: 20px; }
-.led-bit-name { font-size: 0.7em; font-family: var(--font-mono); color: var(--text-muted); }
+.led-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.led-col .led-light { width: 22px; height: 22px; }
+.led-bit-name { font-size: 0.72em; font-family: var(--font-mono); color: var(--text-muted); }
 
-.uart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.btn-link { background: transparent; border: none; color: var(--accent-blue); cursor: pointer; font-size: 0.78em; }
+.uart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.btn-link { background: transparent; border: none; color: var(--accent-blue); cursor: pointer; font-size: 0.8em; }
 .uart-console {
-    background: #090b0e; border: 1px solid #1a1e28; color: var(--accent);
+    background: #080a0f; border: 1px solid #1a1e28; color: var(--accent);
     padding: 8px; border-radius: 6px; font-family: var(--font-mono);
-    font-size: 0.8em; height: 75px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+    font-size: 0.82em; height: 80px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
 }
 
-/* ================= ЭКРАН 3: ПРОЦЕССОР ================= */
+/* ================= РЕГИСТРЫ И ДАМПЫ ================= */
 .cpu-scroll-area {
-    flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;
+    flex: 1; height: 100%; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px;
 }
-.cpu-subcard { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 10px; }
+.cpu-subcard { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; }
+
 .flags-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .flag-cell {
-    background: #141822; border: 1px solid var(--border-color); padding: 3px;
+    background: #141822; border: 1px solid var(--border-color); padding: 4px;
     text-align: center; border-radius: 4px; font-family: var(--font-mono);
 }
 .flag-cell span { display: block; font-size: 0.68em; color: var(--text-muted); }
-.flag-cell b { font-size: 0.82em; color: #64748b; }
+.flag-cell b { font-size: 0.84em; color: #64748b; }
 .flag-cell.flag-on b { color: var(--accent); text-shadow: 0 0 6px var(--accent); }
 .flag-cell.flag-on { border-color: var(--accent); }
 
 .pointers-bar {
     display: flex; justify-content: space-between; padding: 6px 10px;
     background: #141822; border-radius: 6px; border: 1px solid var(--border-color);
-    font-size: 0.75em; font-family: var(--font-mono);
+    font-size: 0.76em; font-family: var(--font-mono);
 }
 .ptr b { color: #fff; margin-left: 2px; }
 
 .registers-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .reg-cell {
     background: #141822; border: 1px solid var(--border-color); border-radius: 5px;
-    padding: 3px 5px; font-family: var(--font-mono); font-size: 0.74em;
+    padding: 4px 6px; font-family: var(--font-mono); font-size: 0.76em;
 }
 .reg-cell.changed { background: rgba(255, 179, 0, 0.2); border-color: var(--accent-gold); }
-.reg-name { color: var(--text-muted); display: block; font-size: 0.75em; }
+.reg-name { color: var(--text-muted); display: block; font-size: 0.76em; }
 .reg-val-hex { color: #fff; font-weight: 700; }
-.reg-val-dec { color: var(--text-muted); font-size: 0.8em; margin-left: 2px; }
+.reg-val-dec { color: var(--text-muted); font-size: 0.82em; margin-left: 2px; }
 
 .mem-dumps-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .dump-view {
-    background: #090b0e; border: 1px solid var(--border-color); padding: 6px;
-    border-radius: 4px; font-family: var(--font-mono); font-size: 0.7em;
+    background: #080a0f; border: 1px solid var(--border-color); padding: 6px;
+    border-radius: 4px; font-family: var(--font-mono); font-size: 0.72em;
     height: 110px; overflow-y: auto; color: #94a3b8; line-height: 1.35;
 }
 
-/* ================= МОБИЛЬНАЯ АДАПТАЦИЯ ================= */
-@media (max-width: 600px) {
-    .toolbar { flex-direction: column; align-items: stretch; gap: 6px; padding: 6px 8px; }
+/* ================= МОБИЛЬНЫЙ РЕЖИМ (СЛАЙДЫ ТОЛЬКО НА ЭКРАНАХ МЕНЬШЕ 950px) ================= */
+@media (max-width: 950px) {
+    .nav-screens { display: flex; }
+    .slider-viewport {
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        scroll-behavior: smooth;
+    }
+    .slider-track {
+        display: flex;
+        width: 300%;
+        grid-template-columns: none;
+        padding: 6px;
+        gap: 0;
+    }
+    .slide-panel {
+        flex: 0 0 33.333333%;
+        width: 33.333333%;
+        scroll-snap-align: start;
+        border-radius: 0;
+    }
+    .toolbar { flex-direction: column; align-items: stretch; gap: 6px; }
     .toolbar-left, .toolbar-center { justify-content: space-between; }
     .select-wrapper select { max-width: 180px; }
-    .nav-screens { width: 100%; justify-content: space-around; }
 }
