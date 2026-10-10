@@ -1,0 +1,371 @@
+:root {
+    --bg-dark: #12151c;
+    --panel-bg: #1a1e28;
+    --card-bg: #222735;
+    --border-color: #2e3547;
+    --text-main: #e2e8f0;
+    --text-muted: #8b9bb4;
+    
+    --accent: #00e676;       /* Зелёный светодиод */
+    --accent-blue: #2979ff;  /* Информационный */
+    --accent-gold: #ffb300;  /* Акцентный */
+    --accent-red: #ff3d00;   /* Предупреждение */
+    
+    --font-mono: 'Consolas', 'Courier New', monospace;
+    --font-ui: system-ui, -apple-system, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* ================= ШАПКА ================= */
+.toolbar {
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.toolbar-brand { display: flex; align-items: center; gap: 8px; }
+.toolbar-brand h1 { font-size: 1.15em; font-weight: 700; color: #fff; }
+.toolbar-brand h1 span { color: var(--accent); font-size: 0.85em; font-weight: 400; }
+.chip-icon { font-size: 1.3em; }
+
+.toolbar-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.select-wrapper select {
+    background: var(--card-bg);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+    padding: 7px 12px;
+    border-radius: 8px;
+    outline: none;
+    cursor: pointer;
+    font-size: 0.88em;
+}
+
+.btn-group { display: flex; gap: 6px; }
+.btn {
+    background: var(--card-bg);
+    color: #fff;
+    border: 1px solid var(--border-color);
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.88em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all .15s ease;
+}
+.btn:hover { transform: translateY(-1px); border-color: var(--text-muted); }
+.btn-step { background: rgba(41, 121, 255, 0.2); border-color: var(--accent-blue); color: #90caf9; }
+.btn-run { background: rgba(0, 230, 118, 0.2); border-color: var(--accent); color: #b9f6ca; }
+.btn-run.running { background: rgba(255, 61, 0, 0.2); border-color: var(--accent-red); color: #ffab91; }
+.btn-reset { color: var(--text-muted); }
+
+.speed-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82em;
+    color: var(--text-muted);
+}
+.speed-control input[type="range"] {
+    width: 80px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+/* ================= МОБИЛЬНЫЕ ВКЛАДКИ ================= */
+.mobile-tabs {
+    display: none;
+    width: 100%;
+    gap: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-color);
+}
+.tab-btn {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    padding: 8px 4px;
+    border-radius: 6px;
+    font-size: 0.85em;
+    cursor: pointer;
+}
+.tab-btn.active {
+    background: var(--accent-blue);
+    color: white;
+    border-color: var(--accent-blue);
+}
+
+/* ================= СЕТКА РАБОЧЕЙ ЗОНЫ ================= */
+.workspace-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 10px;
+    padding: 10px;
+    overflow: hidden;
+}
+
+.panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.panel-header {
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.panel-header h2 { font-size: 0.95em; font-weight: 600; color: #fff; }
+.editor-status { font-size: 0.8em; color: var(--text-muted); display: flex; gap: 12px; }
+
+/* Редактор */
+.editor-wrapper {
+    flex: 1;
+    display: flex;
+    background: #0f1218;
+    overflow: hidden;
+    position: relative;
+}
+.line-numbers {
+    width: 44px;
+    padding: 12px 6px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    color: #4a5568;
+    background: #0a0c10;
+    user-select: none;
+    line-height: 1.5;
+    border-right: 1px solid #1a1e28;
+}
+textarea#asmCode {
+    flex: 1;
+    background: transparent;
+    color: #e2e8f0;
+    border: none;
+    outline: none;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    line-height: 1.5;
+    resize: none;
+    white-space: pre;
+    tab-size: 4;
+}
+
+/* ================= ВИРТУАЛЬНАЯ ПЛАТА ================= */
+.board-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.board-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px;
+}
+.card-title { font-size: 0.85em; font-weight: 600; color: #fff; margin-bottom: 8px; }
+.board-note { font-size: 0.75em; color: var(--text-muted); margin-bottom: 10px; }
+
+/* Светодиоды */
+.single-led { display: flex; align-items: center; gap: 10px; }
+.led-light {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #2a3142; border: 2px solid #3e485e;
+    transition: all .1s ease;
+}
+.led-light.active-led-yellow {
+    background: #ffd600;
+    box-shadow: 0 0 16px #ffd600, 0 0 4px #fff;
+    border-color: #fff;
+}
+.led-light.active-led-green {
+    background: #00e676;
+    box-shadow: 0 0 16px #00e676, 0 0 4px #fff;
+    border-color: #fff;
+}
+.led-label { font-size: 0.8em; color: var(--text-muted); }
+
+.led-bar {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 6px;
+    text-align: center;
+}
+.led-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.led-col .led-light { width: 22px; height: 22px; }
+.led-bit-name { font-size: 0.72em; font-family: var(--font-mono); color: var(--text-muted); }
+
+/* Кнопочный модуль */
+.btn-matrix {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+.v-btn {
+    background: #171b24;
+    border: 2px solid #374151;
+    color: #e2e8f0;
+    padding: 10px 4px;
+    border-radius: 8px;
+    font-size: 0.8em;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+    transition: all .1s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.v-btn span { font-size: 0.7em; font-weight: 400; color: var(--text-muted); }
+.v-btn:active, .v-btn.pressed {
+    background: var(--accent-gold);
+    color: #000;
+    border-color: #fff;
+    transform: scale(0.95);
+    box-shadow: 0 0 10px rgba(255, 179, 0, 0.5);
+}
+
+/* Терминал UART */
+.uart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.btn-link { background: transparent; border: none; color: var(--accent-blue); cursor: pointer; font-size: 0.8em; }
+.uart-console {
+    background: #090b0e;
+    border: 1px solid #1a1e28;
+    color: var(--accent);
+    padding: 10px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.82em;
+    height: 90px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* ================= РЕГИСТРЫ И SREG ================= */
+.sreg-box { padding: 10px 12px; border-bottom: 1px solid var(--border-color); }
+.sreg-title { font-size: 0.78em; color: var(--text-muted); margin-bottom: 6px; }
+.flags-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.flag-cell {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    padding: 4px;
+    text-align: center;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+}
+.flag-cell span { display: block; font-size: 0.7em; color: var(--text-muted); }
+.flag-cell b { font-size: 0.88em; color: #64748b; }
+.flag-cell.flag-on b { color: var(--accent); text-shadow: 0 0 6px var(--accent); }
+.flag-cell.flag-on { border-color: var(--accent); }
+
+.pointers-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(0,0,0,0.2);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.8em;
+    font-family: var(--font-mono);
+}
+.pointer-badge span { color: var(--text-muted); }
+.pointer-badge b { color: #fff; }
+
+.registers-container { flex: 1; overflow-y: auto; padding: 10px; }
+.registers-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+.reg-cell {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 5px 6px;
+    font-family: var(--font-mono);
+    font-size: 0.78em;
+    transition: background .2s ease;
+}
+.reg-cell.changed { background: rgba(255, 179, 0, 0.2); border-color: var(--accent-gold); }
+.reg-name { color: var(--text-muted); display: block; font-size: 0.8em; }
+.reg-val-hex { color: #fff; font-weight: 700; }
+.reg-val-dec { color: var(--text-muted); font-size: 0.85em; margin-left: 4px; }
+
+/* ================= ДАМП ПАМЯТИ ================= */
+.mem-container { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 12px; }
+.mem-subhead { font-size: 0.78em; color: var(--text-muted); margin-bottom: 4px; }
+.mem-dump {
+    background: #090b0e;
+    border: 1px solid var(--border-color);
+    padding: 8px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.75em;
+    max-height: 180px;
+    overflow-y: auto;
+    line-height: 1.4;
+    color: #94a3b8;
+}
+
+/* ================= АДАПТИВНОСТЬ ПОД ПЛАНШЕТЫ И ТЕЛЕФОНЫ ================= */
+@media (max-width: 1024px) {
+    .workspace-grid {
+        grid-template-columns: 1.2fr 1fr;
+    }
+    .mem-panel { display: none; } /* На планшетах память вынесена во вкладку */
+}
+
+@media (max-width: 768px) {
+    .mobile-tabs { display: flex; }
+    .workspace-grid {
+        grid-template-columns: 1fr;
+        padding: 6px;
+    }
+    .panel { display: none; }
+    .panel.active-panel { display: flex; }
+    
+    .toolbar-controls { width: 100%; justify-content: space-between; }
+    .select-wrapper { flex: 1; }
+    .select-wrapper select { width: 100%; }
+}
