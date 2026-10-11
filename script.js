@@ -1,5 +1,6 @@
 /* =========================================================
    ЯДРО ЭМУЛЯТОРА AVR ATmega328P (script.js - Монолит)
+   С поддержкой всех флагов SREG и интерактивной стрелкой PC
    ========================================================= */
 
 /* ================= ГЛАВА 1: ПАМЯТЬ И СОСТОЯНИЕ ================= */
@@ -148,7 +149,7 @@ function writeRAM(addr, val) {
     val &= 0xFF;
     if (addr >= 0 && addr < cpu.ram.length) {
         cpu.ram[addr] = val;
-        if (addr >= 0 && addr < 32) cpu.r[addr] = val; // Синхронизация РОН
+        if (addr >= 0 && addr < 32) cpu.r[addr] = val;
         if (addr === IO.SPL) cpu.sp = (cpu.sp & 0xFF00) | val;
         else if (addr === IO.SPH) cpu.sp = (cpu.sp & 0x00FF) | (val << 8);
         else if (addr === IO.UDR0) cpu.uartLog += String.fromCharCode(val);
@@ -230,6 +231,7 @@ function cpuStep() {
     if (op === 'break') { haltExecution(); updateUI(); return; }
 
     switch (op) {
+        // --- Пересылка ---
         case 'ldi': { cpu.r[parseReg(a[0])] = parseVal(a[1]) & 0xFF; break; }
         case 'mov': { cpu.r[parseReg(a[0])] = cpu.r[parseReg(a[1])]; break; }
         case 'in': {
@@ -287,6 +289,8 @@ function cpuStep() {
             cpu.sp = (cpu.sp + 1) & 0xFFFF;
             cpu.r[parseReg(a[0])] = readRAM(cpu.sp); break;
         }
+
+        // --- Арифметика ---
         case 'add': {
             const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
             const res = cpu.r[r1] + cpu.r[r2];
@@ -383,8 +387,14 @@ function cpuStep() {
         }
         case 'neg': {
             const reg = parseReg(a[0]);
-            const res = (0 - cpu.r[reg]) & 0xFF;
-            setFlagsSub(0, cpu.r[reg], res);
+            const val = cpu.r[reg];
+            const res = (0 - val) & 0xFF;
+            cpu.sreg.H = (((0 - (val & 0x0F)) < 0) ? 1 : 0);
+            cpu.sreg.C = (res !== 0) ? 1 : 0;
+            cpu.sreg.Z = (res === 0) ? 1 : 0;
+            cpu.sreg.N = (res & 0x80) ? 1 : 0;
+            cpu.sreg.V = (val === 0x80) ? 1 : 0;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
             cpu.r[reg] = res; break;
         }
         case 'com': {
@@ -512,6 +522,7 @@ function cpuStep() {
             cpu.sreg.Z = (prevZ === 1 && (res & 0xFF) === 0) ? 1 : 0; break;
         }
 
+        // --- Ветвления ---
         case 'sbrs': { if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) !== 0) nextPC++; break; }
         case 'sbrc': { if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) === 0) nextPC++; break; }
         case 'sbis': {
@@ -538,6 +549,9 @@ function cpuStep() {
         case 'brtc': { if (cpu.sreg.T === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
         case 'brvs': { if (cpu.sreg.V === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
         case 'brvc': { if (cpu.sreg.V === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
+        case 'brhs': { if (cpu.sreg.H === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
+        case 'brhc': { if (cpu.sreg.H === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
+
         case 'call': {
             writeRAM(cpu.sp, (nextPC >> 8) & 0xFF);
             cpu.sp = (cpu.sp - 1) & 0xFFFF;
@@ -546,6 +560,14 @@ function cpuStep() {
             nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break;
         }
         case 'ret': {
+            cpu.sp = (cpu.sp + 1) & 0xFFFF;
+            const low = readRAM(cpu.sp);
+            cpu.sp = (cpu.sp + 1) & 0xFFFF;
+            const high = readRAM(cpu.sp);
+            nextPC = (high << 8) | low; break;
+        }
+        case 'reti': {
+            cpu.sreg.I = 1;
             cpu.sp = (cpu.sp + 1) & 0xFFFF;
             const low = readRAM(cpu.sp);
             cpu.sp = (cpu.sp + 1) & 0xFFFF;
@@ -722,11 +744,10 @@ function setMemFormat(format) {
 
 function renderMemoryDumps() {
     const memBox = document.getElementById('memDumpView');
-    if (!memBox) return; // Надежная защита
+    if (!memBox) return;
 
     let output = '';
     if (cpu.memView === 'ram') {
-        // Вывод с адреса 0x0100 до 0x0178 (можно листать все строки)
         for (let addr = 0x0100; addr <= 0x0178; addr += 8) {
             let bytes = [];
             for (let b = 0; b < 8; b++) {
@@ -780,9 +801,17 @@ function updateUI() {
     renderGutter();
 }
 
-/* ================= ГЛАВА 7: РЕДАКТОР И ПОДСВЕТКА СИНТАКСИСА ================= */
+/* ================= ГЛАВА 7: РЕДАКТОР, ПОДСВЕТКА И ПЕРЕНОС PC ================= */
 
-const KNOWN_OPS = new Set(['ldi','mov','add','adc','sub','subi','sbc','sbci','mul','muls','adiw','sbiw','inc','dec','neg','com','and','andi','or','ori','eor','clr','ser','cpi','cp','cpc','tst','swap','ror','rol','lsl','lsr','asr','sbi','cbi','bst','bld','sbrs','sbrc','sbis','sbic','sec','clc','sez','clz','sen','cln','sev','clv','set','clt','seh','clh','sei','cli','st','std','ld','ldd','lpm','sts','lds','push','pop','jmp','rjmp','breq','brne','brcs','brcc','brlo','brsh','brlt','brge','brmi','brpl','brts','brtc','brvs','brvc','call','ret','in','out','break','nop']);
+const KNOWN_OPS = new Set([
+    'ldi','mov','add','adc','sub','subi','sbc','sbci','mul','muls','adiw','sbiw',
+    'inc','dec','neg','com','and','andi','or','ori','eor','clr','ser','cpi','cp',
+    'cpc','tst','swap','ror','rol','lsl','lsr','asr','sbi','cbi','bst','bld','sbrs',
+    'sbrc','sbis','sbic','sec','clc','sez','clz','sen','cln','sev','clv','set','clt',
+    'seh','clh','sei','cli','st','std','ld','ldd','lpm','sts','lds','push','pop',
+    'jmp','rjmp','breq','brne','brcs','brcc','brlo','brsh','brlt','brge','brmi',
+    'brpl','brts','brtc','brvs','brvc','brhs','brhc','call','ret','reti','in','out','break','nop'
+]);
 
 function highlightCode(rawText) {
     return rawText.split('\n').map(line => {
@@ -811,12 +840,61 @@ function toggleBreakpoint(lineNum) {
     updateSyntax();
 }
 
+// ПЕРЕМЕЩЕНИЕ СТРЕЛКИ PC НА НУЖНУЮ СТРОКУ (Set Next Statement)
+function setPcToLine(targetLine) {
+    if (cpu.program.length === 0) parseProgram(document.getElementById('asmCode').value);
+    if (cpu.program.length === 0) return;
+
+    haltExecution();
+
+    let targetIdx = -1;
+    // Находим первую валидную инструкцию на этой или следующей строке
+    for (let i = 0; i < cpu.program.length; i++) {
+        if (cpu.program[i].lineNum >= targetLine) {
+            targetIdx = i;
+            break;
+        }
+    }
+    if (targetIdx === -1) targetIdx = cpu.program.length;
+
+    cpu.pc = targetIdx;
+    updateUI();
+}
+
+// Drag & Drop обработчики
+function onPcDragStart(e) {
+    e.dataTransfer.setData('text/plain', 'pc');
+    e.dataTransfer.effectAllowed = 'move';
+}
+function onGutterDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+}
+function onGutterDrop(e, lineNum) {
+    e.preventDefault();
+    setPcToLine(lineNum);
+}
+
 function renderGutter() {
     const code = document.getElementById('asmCode').value;
     const curLineNum = cpu.program[cpu.pc]?.lineNum || -1;
     let html = '';
-    for (let i = 1; i <= code.split('\n').length; i++) {
-        html += `<div class="gutter-row ${cpu.breakpoints.has(i) ? 'has-bp' : ''} ${i === curLineNum ? 'is-pc' : ''}" onclick="toggleBreakpoint(${i})"><span class="bp-marker"></span><span class="pc-arrow">▶</span><span class="gutter-num">${i}</span></div>`;
+    const lineCount = code.split('\n').length;
+
+    for (let i = 1; i <= lineCount; i++) {
+        const isCurrentPC = (i === curLineNum);
+        const hasBp = cpu.breakpoints.has(i);
+
+        html += `<div class="gutter-row ${hasBp ? 'has-bp' : ''} ${isCurrentPC ? 'is-pc' : ''}" 
+                      onclick="if (event.altKey) { setPcToLine(${i}); } else { toggleBreakpoint(${i}); }"
+                      ondblclick="setPcToLine(${i})"
+                      ondragover="onGutterDragOver(event)"
+                      ondrop="onGutterDrop(event, ${i})"
+                      title="Клик: точка останова | Двойной клик (или перетащить ▶): переместить стрелку выполнения сюда">
+                    <span class="bp-marker"></span>
+                    <span class="pc-arrow" ${isCurrentPC ? 'draggable="true" ondragstart="onPcDragStart(event)" style="cursor: grab;"' : ''}>▶</span>
+                    <span class="gutter-num">${i}</span>
+                 </div>`;
     }
     document.getElementById('lineGutter').innerHTML = html;
 }
@@ -838,37 +916,56 @@ function scrollToSlide(index) {
 /* ================= ГЛАВА 8: ПОЛНЫЙ НАБОР ПРИМЕРОВ ================= */
 
 const PROGRAMS = {
-    empty: { hint: "", code: `; Новый чистый файл\n.include "m328pdef.inc"\n\nstart:\n    \n` },
-    sort_ram: { hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и <b>сортирует их по возрастанию</b>.", code: `; Сортировка массива в ОЗУ (0x0100)\n.include "m328pdef.inc"\n\nldi r16, 0x16\nsts 0x0100, r16\nldi r16, 0x03\nsts 0x0101, r16\nldi r16, 0x25\nsts 0x0102, r16\nldi r16, 0x45\nsts 0x0103, r16\nldi r16, 0x01\nsts 0x0104, r16\n\nldi r20, 4\nout_1:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r21, 4\n\nin_1:\n    ld r16, x+\n    ld r17, x\n    cp r16, r17\n    brlo no_s\n\n    st x, r16\n    st -x, r17\n    adiw xl, 1\n\nno_s:\n    dec r21\n    brne in_1\n    dec r20\n    brne out_1\n\nfinish:\n    break\n    rjmp finish` },
-    btn_counter: { hint: "Нажмите кнопку <b>K3 (PB0)</b> (+1) или <b>K4 (PB1)</b> (-1). Порт D покажет результат!", code: `; Счётчик по кнопкам\n.include "m328pdef.inc"\nstart:\n    ser r16\n    out DDRD, r16\n    cbi DDRB, 0\n    cbi DDRB, 1\n    sbi PORTB, 0\n    sbi PORTB, 1\n    clr r0\nloop:\n    out PORTD, r0\n    in r17, PINB\n    sbrs r17, 0\n    inc r0\n    sbrs r17, 1\n    dec r0\n    rjmp loop` },
-    led_blink: { hint: "Автоматический счётчик от 0 до 255 на Порту D.", code: `; Бегущий огонёк\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0xFF\n    out DDRD, r16\n    ldi r17, 0x00\nloop:\n    out PORTD, r17\n    inc r17\n    rjmp loop` },
-    button_led: { hint: "Нажмите кнопку <b>K1</b> — светодиод <b>L (PB5)</b> загорится.", code: `; Кнопка включает светодиод L\n.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` },
-    fibonacci: { hint: "Нажмите <b>«Пуск»</b>: ячейки памяти заполнятся числами Фибоначчи!", code: `; Числа Фибоначчи в памяти\n.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` },
-    uart_tx: { hint: "Отправка текста в виртуальный монитор UART.", code: `; Отправка текста в терминал (UART)\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x48\n    out UDR0, r16\n    ldi r16, 0x69\n    out UDR0, r16\n    ldi r16, 0x21\n    out UDR0, r16\nstop:\n    break` },
-    alu_flags: { hint: "Арифметика: наблюдайте за флагами SREG при переполнении и нуле.", code: `; Арифметика и флаги переполнения\n.include "m328pdef.inc"\nstart:\n    ldi r16, 250\n    ldi r17, 10\n    add r16, r17\n    ldi r18, 5\n    subi r18, 5\n    sec\n    clz\n    break` },
-
-    // Комплексный тест новых возможностей
-    test_all: {
-        hint: "<b>Тест всех новых возможностей</b>: Управление всеми флагами SREG, SUBI -3, сдвиги и порты.",
-        code: `; Тест новых команд, флагов и SUBI -3\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x08\n    out sph, r16\n    ldi r16, 0xff\n    out spl, r16\n\n    ; Флаги и прерывания\n    sec\n    clc\n    sez\n    clz\n    sen\n    cln\n    sev\n    clv\n    set\n    clt\n    seh\n    clh\n    sei\n    cli\n    nop\n\n    ; Вычитание отрицательного числа (ЛР 3)\n    ldi r17, 10\n    subi r17, -3 ; r17 = 13 (0x0D), C = 1\n\n    ; Сдвиги с точным расчётом V = N xor C\n    ldi r18, 0x80\n    lsl r18\n    ldi r18, 0x41\n    lsr r18\n\n    ; Запись и чтение порта D\n    ldi r16, 0xAA\n    out PORTD, r16\n    in r19, PORTD\n\n    break\nfinish:\n    rjmp finish`
+    empty: { hint: "", code: `.include "m328pdef.inc"\n\nstart:\n    \n` },
+    sort_ram: { 
+        hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и <b>сортирует их по возрастанию</b>.", 
+        code: `.include "m328pdef.inc"\n\nldi r16, 0x16\nsts 0x0100, r16\nldi r16, 0x03\nsts 0x0101, r16\nldi r16, 0x25\nsts 0x0102, r16\nldi r16, 0x45\nsts 0x0103, r16\nldi r16, 0x01\nsts 0x0104, r16\n\nldi r20, 4\nout_1:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r21, 4\n\nin_1:\n    ld r16, x+\n    ld r17, x\n    cp r16, r17\n    brlo no_s\n\n    st x, r16\n    st -x, r17\n    adiw xl, 1\n\nno_s:\n    dec r21\n    brne in_1\n    dec r20\n    brne out_1\n\nfinish:\n    break\n    rjmp finish` 
+    },
+    btn_counter: { 
+        hint: "Нажмите кнопку <b>K3 (PB0)</b> (+1) или <b>K4 (PB1)</b> (-1). Порт D покажет результат!", 
+        code: `.include "m328pdef.inc"\nstart:\n    ser r16\n    out DDRD, r16\n    cbi DDRB, 0\n    cbi DDRB, 1\n    sbi PORTB, 0\n    sbi PORTB, 1\n    clr r0\nloop:\n    out PORTD, r0\n    in r17, PINB\n    sbrs r17, 0\n    inc r0\n    sbrs r17, 1\n    dec r0\n    rjmp loop` 
+    },
+    led_blink: { 
+        hint: "Автоматический счётчик от 0 до 255 на Порту D.", 
+        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0xFF\n    out DDRD, r16\n    ldi r17, 0x00\nloop:\n    out PORTD, r17\n    inc r17\n    rjmp loop` 
+    },
+    button_led: { 
+        hint: "Нажмите кнопку <b>K1</b> — светодиод <b>L (PB5)</b> загорится.", 
+        code: `.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` 
+    },
+    fibonacci: { 
+        hint: "Нажмите <b>«Пуск»</b>: ячейки памяти заполнятся числами Фибоначчи!", 
+        code: `.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` 
+    },
+    uart_tx: { 
+        hint: "Отправка текста в виртуальный монитор UART.", 
+        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x48\n    out UDR0, r16\n    ldi r16, 0x69\n    out UDR0, r16\n    ldi r16, 0x21\n    out UDR0, r16\nstop:\n    break` 
+    },
+    alu_flags: { 
+        hint: "Арифметика: наблюдайте за флагами SREG при переполнении и нуле.", 
+        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 250\n    ldi r17, 10\n    add r16, r17\n    ldi r18, 5\n    subi r18, 5\n    sec\n    clz\n    break` 
     },
 
-    // Лабораторные работы
+    test_all: {
+        hint: "<b>Комплексный тест</b>: проверка всех флагов SREG (I, T, H, S, V, N, Z, C), SUBI -3, NEG и сдвигов.",
+        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x08\n    out sph, r16\n    ldi r16, 0xff\n    out spl, r16\n\n    ; 1. Проверка установки и очистки ВСЕХ флагов\n    sec\n    clc\n    sez\n    clz\n    sen\n    cln\n    sev\n    clv\n    set\n    clt\n    seh\n    clh\n    sei\n    cli\n    nop\n\n    ; 2. Проверка полупереноса H при сложении (0x0F + 1 -> H=1)\n    ldi r16, 0x0F\n    ldi r17, 0x01\n    add r16, r17\n\n    ; 3. Проверка SUBI с отрицательным числом (ЛР 3)\n    ldi r17, 10\n    subi r17, -3 ; r17 = 13 (0x0D), C = 1\n\n    ; 4. Проверка знакового переполнения в NEG (для -128 / 0x80 -> V=1)\n    ldi r18, 0x80\n    neg r18\n\n    ; 5. Проверка сдвигов и V = N xor C\n    ldi r19, 0x80\n    lsl r19\n\n    break\nfinish:\n    rjmp finish`
+    },
+
     example1_lab1: {
-        hint: "<b> 1 (Example 1)</b>: Инициализация стека, пересылка данных, косвенная адресация X и стек (PUSH/POP).",
-        code: `; Пример 1\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 10\n    ldi r17, 0x10\n    ldi r18, 0x20\n    ldi r19, 0x30\n    mov r1, r16\n    mov r2, r17\n    mov r3, r18\n    mov r4, r18\n    in r4, portd\n    ldi xh, 0x01\n    ldi xl, 0\n    st x+, r1\n    st x+, r2\n    st x+, r3\n    st x+, r4\n    ld r10, -x\n    sts 0x0110, r16\n    lds r5, 0x0100\n    push r1\n    push r2\n    push r3\n    push r4\n    pop r14\n    pop r13\n    pop r12\n    pop r11\n    ret`
+        hint: "<b>ЛР 1 (Example 1)</b>: Инициализация стека, пересылка данных, косвенная адресация X и стек (PUSH/POP).",
+        code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 10\n    ldi r17, 0x10\n    ldi r18, 0x20\n    ldi r19, 0x30\n    mov r1, r16\n    mov r2, r17\n    mov r3, r18\n    mov r4, r18\n    in r4, portd\n    ldi xh, 0x01\n    ldi xl, 0\n    st x+, r1\n    st x+, r2\n    st x+, r3\n    st x+, r4\n    ld r10, -x\n    sts 0x0110, r16\n    lds r5, 0x0100\n    push r1\n    push r2\n    push r3\n    push r4\n    pop r14\n    pop r13\n    pop r12\n    pop r11\n    ret`
     },
     example2_lab2: {
-        hint: "<b> 2 (Example 2.1)</b>: Логические операции AND, OR, EOR, TST, SWAP, BST/BLD, а также SEI и CLI.",
-        code: `; Пример 2\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 0x0f\n    ldi r17, 0x45\n    ldi r18, 0x67\n    ldi r19, 0x89\n    ldi r20, 0x18\n    and r17, r16\n    andi r17, 0b00000010\n    or r18, r16\n    tst r16\n    eor r19, r16\n    eor r19, r19\n    mov r17, r20\n    and r17, r16\n    swap r16\n    and r18, r16\n    or r17, r18\n    bst r16, 7\n    bld r20, 2\n    sei\n    cli\n    ret`
+        hint: "<b>ЛР 2 (Example 2.1)</b>: Логические операции AND, OR, EOR, TST, SWAP, BST/BLD, а также SEI и CLI.",
+        code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 0x0f\n    ldi r17, 0x45\n    ldi r18, 0x67\n    ldi r19, 0x89\n    ldi r20, 0x18\n    and r17, r16\n    andi r17, 0b00000010\n    or r18, r16\n    tst r16\n    eor r19, r16\n    eor r19, r19\n    mov r17, r20\n    and r17, r16\n    swap r16\n    and r18, r16\n    or r17, r18\n    bst r16, 7\n    bld r20, 2\n    sei\n    cli\n    ret`
     },
     example4_lab3: {
-        hint: "<b> 3 (Example 4)</b>: Циклы, работа с тремя массивами в ОЗУ, SUBI с отрицательными константами (-3, -5).",
-        code: `; Пример 4 \n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\ncall pp1\nm:  jmp m\n\npp1:\n    ldi xh, 1\n    ldi yh, 1\n    ldi zh, 1\n    ldi xl, 0x00\n    ldi yl, 0x10\n    ldi zl, 0x20\n    ldi r17, 10\n    ldi r18, 20\nm1:\n    st x+, r17\n    st y+, r18\n    mov r19, r17\n    add r19, r18\n    st z+, r19\n    subi r17, -3\n    subi r18, -5\n    cpi xl, 0x10\n    brne m1\n    ret`
+        hint: "<b>ЛР 3 (Example 4)</b>: Циклы, работа с тремя массивами в ОЗУ, SUBI с отрицательными константами (-3, -5).",
+        code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\ncall pp1\nm:  jmp m\n\npp1:\n    ldi xh, 1\n    ldi yh, 1\n    ldi zh, 1\n    ldi xl, 0x00\n    ldi yl, 0x10\n    ldi zl, 0x20\n    ldi r17, 10\n    ldi r18, 20\nm1:\n    st x+, r17\n    st y+, r18\n    mov r19, r17\n    add r19, r18\n    st z+, r19\n    subi r17, -3\n    subi r18, -5\n    cpi xl, 0x10\n    brne m1\n    ret`
     },
     button_led_lab4: {
-        hint: "<b> 4 (Пример 3)</b>: Опрос кнопки с подтяжкой PULL-UP (PB0) и включение светодиода L (PB5).",
-        code: `; Пример 3\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x20\n    out DDRB, r16\n    ldi r16, 0x01\n    out PORTB, r16\nloop:\n    in r17, PINB\n    bst r17, 0\n    brts led_off\n    brtc led_on\n    rjmp loop\nled_on:\n    sbi PORTB, 5\n    rjmp loop\nled_off:\n    cbi PORTB, 5\n    rjmp loop`
+        hint: "<b>ЛР 4 (Пример 3)</b>: Опрос кнопки с подтяжкой PULL-UP (PB0) и включение светодиода L (PB5).",
+        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x20\n    out DDRB, r16\n    ldi r16, 0x01\n    out PORTB, r16\nloop:\n    in r17, PINB\n    bst r17, 0\n    brts led_off\n    brtc led_on\n    rjmp loop\nled_on:\n    sbi PORTB, 5\n    rjmp loop\nled_off:\n    cbi PORTB, 5\n    rjmp loop`
     }
 };
 
