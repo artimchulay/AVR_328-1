@@ -1,11 +1,10 @@
 /* =========================================================
    ЯДРО ЭМУЛЯТОРА AVR ATmega328P (script.js - Монолит)
-   Полная совместимость с практическими работами 1, 2, 3, 4
+   С исправлениями памяти, АЛУ и поддержкой всех лабораторных
    ========================================================= */
 
 /* ================= ГЛАВА 1: КАРТА ПАМЯТИ И РЕГИСТРЫ ================= */
 
-// Физические адреса регистров в адресном пространстве данных (SRAM)
 const IO_RAM = {
     PINB:   0x23, DDRB:   0x24, PORTB:  0x25,
     PINC:   0x26, DDRC:   0x27, PORTC:  0x28,
@@ -15,15 +14,14 @@ const IO_RAM = {
     UBRR0L: 0xC4, UBRR0H: 0xC5, UDR0:   0xC6
 };
 
-// Смещение стандартного I/O пространства (0x00..0x3F) в SRAM
 const IO_OFFSET = 0x20;
 
 const cpu = {
     r: new Uint8Array(32),
     prevR: new Uint8Array(32),
-    ram: new Uint8Array(0x0900), // 0x0000..0x08FF (РОН + I/O + 2КБ ОЗУ)
+    ram: new Uint8Array(0x0900), // 0x0000..0x08FF (РОН + I/O + ОЗУ)
     pc: 0,
-    sp: 0x08FF,                  // RAMEND для ATmega328P
+    sp: 0x08FF,
     sreg: { C:0, Z:0, N:0, V:0, S:0, H:0, T:0, I:0 },
     cycles: 0,
     running: false,
@@ -83,18 +81,15 @@ function parseVal(arg) {
     return 0;
 }
 
-// Преобразование операнда адреса для команд ввода-вывода (IN, OUT, SBI, CBI, SBIS, SBIC)
 function resolveIoRamAddr(token) {
     if (!token) return 0;
     const upper = token.trim().toUpperCase();
     if (IO_RAM[upper] !== undefined) return IO_RAM[upper];
     const num = parseVal(token);
-    // Если передан I/O-номер (0x00..0x3F), переводим его в адрес ОЗУ со смещением +0x20
     if (num >= 0 && num <= 0x3F) return num + IO_OFFSET;
     return num;
 }
 
-// Преобразование операнда адреса для прямой работы с памятью (LDS, STS)
 function resolveDataRamAddr(token) {
     if (!token) return 0;
     const upper = token.trim().toUpperCase();
@@ -154,7 +149,6 @@ function writeRAM(addr, val) {
     val &= 0xFF;
     if (addr >= 0 && addr < cpu.ram.length) {
         cpu.ram[addr] = val;
-        // Отслеживание записи в указатель стека
         if (addr === IO_RAM.SPL) {
             cpu.sp = (cpu.sp & 0xFF00) | val;
         } else if (addr === IO_RAM.SPH) {
@@ -239,15 +233,8 @@ function cpuStep() {
     if (op === 'break') { haltExecution(); updateUI(); return; }
 
     switch (op) {
-        // --- Пересылка данных ---
-        case 'ldi': {
-            cpu.r[parseReg(a[0])] = parseVal(a[1]) & 0xFF;
-            break;
-        }
-        case 'mov': {
-            cpu.r[parseReg(a[0])] = cpu.r[parseReg(a[1])];
-            break;
-        }
+        case 'ldi': { cpu.r[parseReg(a[0])] = parseVal(a[1]) & 0xFF; break; }
+        case 'mov': { cpu.r[parseReg(a[0])] = cpu.r[parseReg(a[1])]; break; }
         case 'in': {
             const addr = resolveIoRamAddr(a[1]);
             cpu.r[parseReg(a[0])] = readRAM(addr);
@@ -314,8 +301,6 @@ function cpuStep() {
             cpu.r[parseReg(a[0])] = readRAM(cpu.sp);
             break;
         }
-
-        // --- Арифметика ---
         case 'add': {
             const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
             const res = cpu.r[r1] + cpu.r[r2];
@@ -339,7 +324,6 @@ function cpuStep() {
         }
         case 'subi': {
             const r1 = parseReg(a[0]);
-            // Нормализация аргумента до 8-битного байта (например, -3 -> 253)
             const k = parseVal(a[1]) & 0xFF;
             const res = cpu.r[r1] - k;
             setFlagsSub(cpu.r[r1], k, res);
@@ -440,8 +424,6 @@ function cpuStep() {
             cpu.r[reg] = res;
             break;
         }
-
-        // --- Логика и битовые операции ---
         case 'and': {
             const reg = parseReg(a[0]);
             cpu.r[reg] &= cpu.r[parseReg(a[1])];
@@ -478,22 +460,14 @@ function cpuStep() {
             setFlagsLogic(0);
             break;
         }
-        case 'ser': {
-            cpu.r[parseReg(a[0])] = 0xFF;
-            break;
-        }
-        case 'tst': {
-            setFlagsLogic(cpu.r[parseReg(a[0])]);
-            break;
-        }
+        case 'ser': { cpu.r[parseReg(a[0])] = 0xFF; break; }
+        case 'tst': { setFlagsLogic(cpu.r[parseReg(a[0])]); break; }
         case 'swap': {
             const reg = parseReg(a[0]);
             const v = cpu.r[reg];
             cpu.r[reg] = ((v & 0x0F) << 4) | ((v & 0xF0) >> 4);
             break;
         }
-
-        // --- Сдвиги (с корректными V = N ^ C) ---
         case 'lsl': {
             const reg = parseReg(a[0]);
             const cOut = (cpu.r[reg] & 0x80) !== 0;
@@ -532,8 +506,6 @@ function cpuStep() {
             setFlagsShift(cpu.r[reg], cOut);
             break;
         }
-
-        // --- Битовые операции с I/O и флагами ---
         case 'sbi': {
             const addr = resolveIoRamAddr(a[0]);
             writeRAM(addr, readRAM(addr) | (1 << parseVal(a[1])));
@@ -570,8 +542,6 @@ function cpuStep() {
         case 'sei': { cpu.sreg.I = 1; break; }
         case 'cli': { cpu.sreg.I = 0; break; }
         case 'nop': { break; }
-
-        // --- Сравнения ---
         case 'cp': {
             setFlagsSub(cpu.r[parseReg(a[0])], cpu.r[parseReg(a[1])], cpu.r[parseReg(a[0])] - cpu.r[parseReg(a[1])]);
             break;
@@ -589,8 +559,6 @@ function cpuStep() {
             cpu.sreg.Z = (prevZ === 1 && (res & 0xFF) === 0) ? 1 : 0;
             break;
         }
-
-        // --- Переходы и пропуски ---
         case 'sbrs': {
             if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) !== 0) nextPC++;
             break;
@@ -652,7 +620,6 @@ function cpuStep() {
     syncHardwareState();
     updateUI();
 
-    // Проверка точек останова
     if (cpu.running && cpu.pc < cpu.program.length) {
         if (cpu.breakpoints.has(cpu.program[cpu.pc].lineNum)) {
             haltExecution();
@@ -692,7 +659,6 @@ function syncHardwareState() {
         }
     });
 
-    // Если вывод настроен как ВЫХОД (DDR = 1), регистр PIN отражает значение PORT
     pinb = (pinb & ~ddrb) | (portb & ddrb);
     pind = (pind & ~ddrd) | (portd & ddrd);
     pinc = (pinc & ~ddrc) | (portc & ddrc);
@@ -701,11 +667,9 @@ function syncHardwareState() {
     cpu.ram[IO_RAM.PIND] = pind;
     cpu.ram[IO_RAM.PINC] = pinc;
 
-    // Синхронизация SPL / SPH
     cpu.ram[IO_RAM.SPL] = cpu.sp & 0xFF;
     cpu.ram[IO_RAM.SPH] = (cpu.sp >> 8) & 0xFF;
 
-    // Синхронизация SREG в ОЗУ
     let sregByte = 0;
     const flags = ['C','Z','N','V','S','H','T','I'];
     flags.forEach((f, idx) => { if (cpu.sreg[f]) sregByte |= (1 << idx); });
@@ -721,14 +685,12 @@ function selectLedPort(portLetter) {
 }
 
 function renderHardware() {
-    // Светодиод L (PB5)
     const isPB5On = (readRAM(IO_RAM.PORTB) & (1 << 5)) !== 0;
     const ledL = document.getElementById('ledPB5');
     if (ledL) {
         ledL.className = 'led-light ' + (isPB5On ? 'active-led-yellow' : '');
     }
 
-    // Линейка светодиодов выбранного порта
     let currentVal = 0;
     if (cpu.selectedPort === 'D') currentVal = readRAM(IO_RAM.PORTD);
     if (cpu.selectedPort === 'B') currentVal = readRAM(IO_RAM.PORTB);
@@ -782,7 +744,6 @@ function toggleRun() {
 function runLoop() {
     if (!cpu.running) return;
 
-    // Расчёт точной частоты выполнения
     let delay = 20;
     let batchSize = 1;
 
@@ -818,7 +779,6 @@ function cpuReset() {
     cpu.sreg = { C:0, Z:0, N:0, V:0, S:0, H:0, T:0, I:0 };
     cpu.uartLog = "";
 
-    // Сброс физических кнопок в отжатое состояние
     vButtons.forEach(btn => {
         btn.pressed = false;
         document.getElementById('vbtn_' + btn.id)?.classList.remove('latched');
@@ -838,22 +798,23 @@ function updateSpeed(val) {
 
 function setMemView(view) {
     cpu.memView = view;
-    document.getElementById('btnMemRAM').classList.toggle('active', view === 'ram');
-    document.getElementById('btnMemStack').classList.toggle('active', view === 'stack');
+    document.getElementById('btnMemRAM')?.classList.toggle('active', view === 'ram');
+    document.getElementById('btnMemStack')?.classList.toggle('active', view === 'stack');
     renderMemoryDumps();
 }
 
 function setMemFormat(format) {
     cpu.memFormat = format;
-    document.getElementById('btnFmtHex').classList.toggle('active', format === 'hex');
-    document.getElementById('btnFmtDec').classList.toggle('active', format === 'dec');
+    document.getElementById('btnFmtHex')?.classList.toggle('active', format === 'hex');
+    document.getElementById('btnFmtDec')?.classList.toggle('active', format === 'dec');
     renderMemoryDumps();
 }
 
 function renderMemoryDumps() {
     const memBox = document.getElementById('memDumpView');
-    let output = '';
+    if (!memBox) return; // ЗАЩИТА ОТ ОШИБОК, ЕСЛИ ЭЛЕМЕНТ ЕЩЕ НЕ ЗАГРУЖЕН
 
+    let output = '';
     if (cpu.memView === 'ram') {
         for (let addr = 0x0100; addr <= 0x0138; addr += 8) {
             let bytes = [];
@@ -864,7 +825,6 @@ function renderMemoryDumps() {
             output += `0x${addr.toString(16).toUpperCase()}:  ${bytes.join('  ')}\n`;
         }
     } else {
-        // Просмотр области стека в конце памяти (0x08C0..0x08FF)
         for (let addr = 0x08C0; addr <= 0x08F8; addr += 8) {
             let bytes = [];
             for (let b = 0; b < 8; b++) {
@@ -981,7 +941,7 @@ function scrollToSlide(index) {
     document.querySelectorAll('.nav-screen-btn').forEach((b, i) => b.classList.toggle('active', i === index));
 }
 
-/* ================= ГЛАВА 8: ПРИМЕРЫ ИЗ ПРАКТИЧЕСКИХ РАБОТ ================= */
+/* ================= ГЛАВА 8: ПРИМЕРЫ ПРОГРАММ ================= */
 
 const PROGRAMS = {
     empty: { 
@@ -1008,13 +968,29 @@ const PROGRAMS = {
         hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и <b>сортирует их по возрастанию</b>.", 
         code: `; Сортировка массива в ОЗУ (0x0100)\n.include "m328pdef.inc"\n\nldi r16, 0x16\nsts 0x0100, r16\nldi r16, 0x03\nsts 0x0101, r16\nldi r16, 0x25\nsts 0x0102, r16\nldi r16, 0x45\nsts 0x0103, r16\nldi r16, 0x01\nsts 0x0104, r16\n\nldi r20, 4\nout_1:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r21, 4\n\nin_1:\n    ld r16, x+\n    ld r17, x\n    cp r16, r17\n    brlo no_s\n\n    st x, r16\n    st -x, r17\n    adiw xl, 1\n\nno_s:\n    dec r21\n    brne in_1\n    dec r20\n    brne out_1\n\nfinish:\n    break\n    rjmp finish` 
     },
+    btn_counter: { 
+        hint: "Нажмите кнопку <b>K3 (PB0)</b> (+1) или <b>K4 (PB1)</b> (-1). Порт D покажет результат!", 
+        code: `; Счётчик по кнопкам\n.include "m328pdef.inc"\nstart:\n    ser r16\n    out DDRD, r16\n    cbi DDRB, 0\n    cbi DDRB, 1\n    sbi PORTB, 0\n    sbi PORTB, 1\n    clr r0\nloop:\n    out PORTD, r0\n    in r17, PINB\n    sbrs r17, 0\n    inc r0\n    sbrs r17, 1\n    dec r0\n    rjmp loop` 
+    },
+    led_blink: { 
+        hint: "Автоматический счётчик от 0 до 255 на Порту D.", 
+        code: `; Бегущий огонёк\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0xFF\n    out DDRD, r16\n    ldi r17, 0x00\nloop:\n    out PORTD, r17\n    inc r17\n    rjmp loop` 
+    },
+    button_led: { 
+        hint: "Нажмите кнопку <b>K1 (PD2)</b> — светодиод <b>L (PB5)</b> загорится.", 
+        code: `; Кнопка включает светодиод L\n.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` 
+    },
     fibonacci: { 
-        hint: "Нажмите <b>«Пуск»</b>: ячейки памяти (0x0100+) заполнятся числами Фибоначчи!", 
-        code: `; Числа Фибоначчи в памяти (ЛР №3)\n.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` 
+        hint: "Нажмите <b>«Пуск»</b>: ячейки памяти заполнятся числами Фибоначчи!", 
+        code: `; Числа Фибоначчи в памяти\n.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` 
     },
     uart_tx: { 
-        hint: "Отправка текста в виртуальный монитор UART через команду OUT/STS.", 
-        code: `; Отправка текста в терминал (UART)\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x48 ; 'H'\n    sts UDR0, r16\n    ldi r16, 0x69 ; 'i'\n    sts UDR0, r16\n    ldi r16, 0x21 ; '!'\n    sts UDR0, r16\nstop:\n    break` 
+        hint: "Отправка текста в виртуальный монитор UART.", 
+        code: `; Отправка текста в терминал (UART)\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x48\n    sts UDR0, r16\n    ldi r16, 0x69\n    sts UDR0, r16\n    ldi r16, 0x21\n    sts UDR0, r16\nstop:\n    break` 
+    },
+    alu_flags: { 
+        hint: "Арифметика: наблюдайте за флагами SREG при переполнении и нуле.", 
+        code: `; Арифметика и флаги переполнения\n.include "m328pdef.inc"\nstart:\n    ldi r16, 250\n    ldi r17, 10\n    add r16, r17\n    ldi r18, 5\n    subi r18, 5\n    sec\n    clz\n    break` 
     }
 };
 
