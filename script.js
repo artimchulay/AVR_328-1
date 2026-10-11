@@ -13,10 +13,12 @@ const IO = {
     UBRR0L: 0xC4, UBRR0H: 0xC5, UDR0:   0xC6
 };
 
+const IO_OFFSET = 0x20;
+
 const cpu = {
     r: new Uint8Array(32),
     prevR: new Uint8Array(32),
-    ram: new Uint8Array(0x0900), // ОЗУ: РОН + ПУ + память 0x0100..0x08FF
+    ram: new Uint8Array(0x0900), // 0x0000..0x08FF
     pc: 0,
     sp: 0x08FF,
     sreg: { C:0, Z:0, N:0, V:0, S:0, H:0, T:0, I:0 },
@@ -59,16 +61,39 @@ function parseReg(arg) {
 function parseVal(arg) {
     if (!arg) return 0;
     arg = arg.trim().toLowerCase();
+    if (arg === 'ramend') return 0x08FF;
     if (arg.includes('low(ramend)')) return 0xFF;
     if (arg.includes('high(ramend)')) return 0x08;
     if (arg.includes('1<<txen0')) return 0x08;
     if (arg.includes('1<<ucsz00') || arg.includes('1<<ucsz01')) return 0x06;
 
-    if (arg.startsWith('$')) return parseInt(arg.substring(1), 16);
-    if (arg.startsWith('0x')) return parseInt(arg.substring(2), 16);
-    if (arg.startsWith('0b')) return parseInt(arg.substring(2), 2);
-    if (!isNaN(parseInt(arg, 10))) return parseInt(arg, 10);
+    const upper = arg.toUpperCase();
+    if (IO[upper] !== undefined) {
+        return IO[upper] < 0x60 ? IO[upper] - IO_OFFSET : IO[upper];
+    }
+
+    if (arg.startsWith('$')) return parseInt(arg.substring(1), 16) || 0;
+    if (arg.startsWith('0x')) return parseInt(arg.substring(2), 16) || 0;
+    if (arg.startsWith('0b')) return parseInt(arg.substring(2), 2) || 0;
+    const dec = parseInt(arg, 10);
+    if (!isNaN(dec)) return dec;
     return 0;
+}
+
+function resolveIoRamAddr(token) {
+    if (!token) return 0;
+    const upper = token.trim().toUpperCase();
+    if (IO[upper] !== undefined) return IO[upper];
+    const num = parseVal(token);
+    if (num >= 0 && num <= 0x3F) return num + IO_OFFSET;
+    return num;
+}
+
+function resolveDataRamAddr(token) {
+    if (!token) return 0;
+    const upper = token.trim().toUpperCase();
+    if (IO[upper] !== undefined) return IO[upper];
+    return parseVal(token);
 }
 
 function parseProgram(text) {
@@ -120,31 +145,73 @@ function parseProgram(text) {
 }
 
 function writeRAM(addr, val) {
-    if (addr >= 0 && addr < cpu.ram.length) cpu.ram[addr] = val & 0xFF;
+    val &= 0xFF;
+    if (addr >= 0 && addr < cpu.ram.length) {
+        cpu.ram[addr] = val;
+        if (addr >= 0 && addr < 32) cpu.r[addr] = val; // Синхронизация РОН
+        if (addr === IO.SPL) cpu.sp = (cpu.sp & 0xFF00) | val;
+        else if (addr === IO.SPH) cpu.sp = (cpu.sp & 0x00FF) | (val << 8);
+        else if (addr === IO.UDR0) cpu.uartLog += String.fromCharCode(val);
+    }
 }
 
 function readRAM(addr) {
+    if (addr >= 0 && addr < 32) return cpu.r[addr];
     if (addr >= 0 && addr < cpu.ram.length) return cpu.ram[addr];
     return 0;
 }
 
 function getPointerAddr(name) {
     name = name.toLowerCase();
-    if (name === 'x' || name === 'xl' || name === 'xh') return (cpu.r[27] << 8) | cpu.r[26];
-    if (name === 'y' || name === 'yl' || name === 'yh') return (cpu.r[29] << 8) | cpu.r[28];
-    if (name === 'z' || name === 'zl' || name === 'zh') return (cpu.r[31] << 8) | cpu.r[30];
+    if (name.includes('x')) return (cpu.r[27] << 8) | cpu.r[26];
+    if (name.includes('y')) return (cpu.r[29] << 8) | cpu.r[28];
+    if (name.includes('z')) return (cpu.r[31] << 8) | cpu.r[30];
     return 0;
 }
 
 function setPointerAddr(name, val) {
     name = name.toLowerCase();
     val &= 0xFFFF;
-    if (name === 'x' || name === 'xl' || name === 'xh') { cpu.r[27] = (val >> 8) & 0xFF; cpu.r[26] = val & 0xFF; }
-    if (name === 'y' || name === 'yl' || name === 'yh') { cpu.r[29] = (val >> 8) & 0xFF; cpu.r[28] = val & 0xFF; }
-    if (name === 'z' || name === 'zl' || name === 'zh') { cpu.r[31] = (val >> 8) & 0xFF; cpu.r[30] = val & 0xFF; }
+    if (name.includes('x')) { cpu.r[26] = val & 0xFF; cpu.r[27] = (val >> 8) & 0xFF; }
+    else if (name.includes('y')) { cpu.r[28] = val & 0xFF; cpu.r[29] = (val >> 8) & 0xFF; }
+    else if (name.includes('z')) { cpu.r[30] = val & 0xFF; cpu.r[31] = (val >> 8) & 0xFF; }
 }
 
 /* ================= ГЛАВА 3: АЛУ И ВЫПОЛНЕНИЕ КОМАНД ================= */
+
+function setFlagsAdd(a, b, res) {
+    cpu.sreg.H = (((a & 0x0F) + (b & 0x0F)) > 0x0F) ? 1 : 0;
+    cpu.sreg.C = (res > 0xFF) ? 1 : 0;
+    cpu.sreg.Z = ((res & 0xFF) === 0) ? 1 : 0;
+    cpu.sreg.N = (res & 0x80) ? 1 : 0;
+    cpu.sreg.V = (!((a ^ b) & 0x80) && ((a ^ res) & 0x80)) ? 1 : 0;
+    cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
+}
+
+function setFlagsSub(a, b, res) {
+    b &= 0xFF;
+    cpu.sreg.H = (((a & 0x0F) - (b & 0x0F)) < 0) ? 1 : 0;
+    cpu.sreg.C = (a < b) ? 1 : 0;
+    cpu.sreg.Z = ((res & 0xFF) === 0) ? 1 : 0;
+    cpu.sreg.N = (res & 0x80) ? 1 : 0;
+    cpu.sreg.V = (((a ^ b) & 0x80) && ((a ^ res) & 0x80)) ? 1 : 0;
+    cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
+}
+
+function setFlagsLogic(val) {
+    cpu.sreg.Z = ((val & 0xFF) === 0) ? 1 : 0;
+    cpu.sreg.N = (val & 0x80) ? 1 : 0;
+    cpu.sreg.V = 0;
+    cpu.sreg.S = cpu.sreg.N;
+}
+
+function setFlagsShift(val, carryOut) {
+    cpu.sreg.C = carryOut ? 1 : 0;
+    cpu.sreg.Z = ((val & 0xFF) === 0) ? 1 : 0;
+    cpu.sreg.N = (val & 0x80) ? 1 : 0;
+    cpu.sreg.V = cpu.sreg.N ^ cpu.sreg.C;
+    cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
+}
 
 function cpuStep() {
     if (cpu.error) { haltExecution(); updateUI(); return; }
@@ -166,50 +233,97 @@ function cpuStep() {
         case 'ldi': { cpu.r[parseReg(a[0])] = parseVal(a[1]) & 0xFF; break; }
         case 'mov': { cpu.r[parseReg(a[0])] = cpu.r[parseReg(a[1])]; break; }
         case 'in': {
-            let addr = IO[a[1].toUpperCase()] !== undefined ? IO[a[1].toUpperCase()] : parseVal(a[1]);
+            const addr = resolveIoRamAddr(a[1]);
             cpu.r[parseReg(a[0])] = readRAM(addr); break;
         }
         case 'out': {
-            let addr = IO[a[0].toUpperCase()] !== undefined ? IO[a[0].toUpperCase()] : parseVal(a[0]);
+            const addr = resolveIoRamAddr(a[0]);
+            writeRAM(addr, cpu.r[parseReg(a[1])]); break;
+        }
+        case 'lds': {
+            const addr = resolveDataRamAddr(a[1]);
+            cpu.r[parseReg(a[0])] = readRAM(addr); break;
+        }
+        case 'sts': {
+            const addr = resolveDataRamAddr(a[0]);
+            writeRAM(addr, cpu.r[parseReg(a[1])]); break;
+        }
+        case 'ld': {
+            let addr = getPointerAddr(a[1].replace('+', '').replace('-', ''));
+            if (a[1].includes('-')) { addr--; setPointerAddr(a[1].replace('-', ''), addr); }
+            cpu.r[parseReg(a[0])] = readRAM(addr);
+            if (a[1].includes('+')) setPointerAddr(a[1].replace('+', ''), addr + 1); break;
+        }
+        case 'st': {
+            let addr = getPointerAddr(a[0].replace('+', '').replace('-', ''));
+            if (a[0].includes('-')) { addr--; setPointerAddr(a[0].replace('-', ''), addr); }
             writeRAM(addr, cpu.r[parseReg(a[1])]);
-            if (a[0].toUpperCase() === 'SPL' || addr === IO.SPL) cpu.sp = (cpu.sp & 0xFF00) | cpu.r[parseReg(a[1])];
-            if (a[0].toUpperCase() === 'SPH' || addr === IO.SPH) cpu.sp = (cpu.sp & 0x00FF) | (cpu.r[parseReg(a[1])] << 8);
-            if (a[0].toUpperCase() === 'UDR0' || addr === IO.UDR0) cpu.uartLog += String.fromCharCode(cpu.r[parseReg(a[1])]);
-            break;
+            if (a[0].includes('+')) setPointerAddr(a[0].replace('+', ''), addr + 1); break;
+        }
+        case 'ldd': {
+            const parts = a[1].toLowerCase().split('+');
+            const offset = parseVal(parts[1] || '0');
+            cpu.r[parseReg(a[0])] = readRAM(getPointerAddr(parts[0].trim()) + offset); break;
+        }
+        case 'std': {
+            const parts = a[0].toLowerCase().split('+');
+            const offset = parseVal(parts[1] || '0');
+            writeRAM(getPointerAddr(parts[0].trim()) + offset, cpu.r[parseReg(a[1])]); break;
+        }
+        case 'lpm': {
+            const dataObj = cpu.program.find(p => p.type === 'DATA_DB');
+            const targetReg = a.length > 0 ? parseReg(a[0]) : 0;
+            if (dataObj && dataObj.str) {
+                const zAddr = getPointerAddr('z');
+                cpu.r[targetReg] = dataObj.str.charCodeAt(zAddr % dataObj.str.length) || 0;
+            }
+            if (a.length > 1 && a[1].includes('+')) setPointerAddr('z', getPointerAddr('z') + 1); break;
+        }
+        case 'push': {
+            writeRAM(cpu.sp, cpu.r[parseReg(a[0])]);
+            cpu.sp = (cpu.sp - 1) & 0xFFFF; break;
+        }
+        case 'pop': {
+            cpu.sp = (cpu.sp + 1) & 0xFFFF;
+            cpu.r[parseReg(a[0])] = readRAM(cpu.sp); break;
         }
         case 'add': {
-            const res = cpu.r[parseReg(a[0])] + cpu.r[parseReg(a[1])];
-            setFlagsAdd(cpu.r[parseReg(a[0])], cpu.r[parseReg(a[1])], res);
-            cpu.r[parseReg(a[0])] = res & 0xFF; break;
+            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
+            const res = cpu.r[r1] + cpu.r[r2];
+            setFlagsAdd(cpu.r[r1], cpu.r[r2], res);
+            cpu.r[r1] = res & 0xFF; break;
         }
         case 'adc': {
-            const res = cpu.r[parseReg(a[0])] + cpu.r[parseReg(a[1])] + cpu.sreg.C;
-            setFlagsAdd(cpu.r[parseReg(a[0])], cpu.r[parseReg(a[1])], res);
-            cpu.r[parseReg(a[0])] = res & 0xFF; break;
+            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
+            const res = cpu.r[r1] + cpu.r[r2] + cpu.sreg.C;
+            setFlagsAdd(cpu.r[r1], cpu.r[r2], res);
+            cpu.r[r1] = res & 0xFF; break;
         }
         case 'sub': {
-            const k = cpu.r[parseReg(a[1])];
-            const res = cpu.r[parseReg(a[0])] - k;
-            setFlagsSub(cpu.r[parseReg(a[0])], k, res);
-            cpu.r[parseReg(a[0])] = res & 0xFF; break;
+            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
+            const res = cpu.r[r1] - cpu.r[r2];
+            setFlagsSub(cpu.r[r1], cpu.r[r2], res);
+            cpu.r[r1] = res & 0xFF; break;
         }
         case 'subi': {
-            const k = parseVal(a[1]) & 0xFF; // поддержка отрицательных чисел (-3 -> 253)
-            const res = cpu.r[parseReg(a[0])] - k;
-            setFlagsSub(cpu.r[parseReg(a[0])], k, res);
-            cpu.r[parseReg(a[0])] = res & 0xFF; break;
+            const r1 = parseReg(a[0]);
+            const k = parseVal(a[1]) & 0xFF;
+            const res = cpu.r[r1] - k;
+            setFlagsSub(cpu.r[r1], k, res);
+            cpu.r[r1] = res & 0xFF; break;
         }
         case 'sbc': {
-            const k = cpu.r[parseReg(a[1])];
-            const res = cpu.r[parseReg(a[0])] - k - cpu.sreg.C;
-            setFlagsSub(cpu.r[parseReg(a[0])], k + cpu.sreg.C, res);
-            cpu.r[parseReg(a[0])] = res & 0xFF; break;
+            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
+            const res = cpu.r[r1] - cpu.r[r2] - cpu.sreg.C;
+            setFlagsSub(cpu.r[r1], cpu.r[r2] + cpu.sreg.C, res);
+            cpu.r[r1] = res & 0xFF; break;
         }
         case 'sbci': {
+            const r1 = parseReg(a[0]);
             const k = parseVal(a[1]) & 0xFF;
-            const res = cpu.r[parseReg(a[0])] - k - cpu.sreg.C;
-            setFlagsSub(cpu.r[parseReg(a[0])], k + cpu.sreg.C, res);
-            cpu.r[parseReg(a[0])] = res & 0xFF; break;
+            const res = cpu.r[r1] - k - cpu.sreg.C;
+            setFlagsSub(cpu.r[r1], k + cpu.sreg.C, res);
+            cpu.r[r1] = res & 0xFF; break;
         }
         case 'mul': {
             const res = cpu.r[parseReg(a[0])] * cpu.r[parseReg(a[1])];
@@ -233,8 +347,7 @@ function cpuStep() {
             cpu.sreg.Z = ((sum & 0xFFFF) === 0) ? 1 : 0;
             cpu.sreg.N = (sum & 0x8000) ? 1 : 0;
             cpu.sreg.V = (!(cur & 0x8000) && (sum & 0x8000)) ? 1 : 0;
-            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
-            break;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V; break;
         }
         case 'sbiw': {
             let ptrName = a[0].replace('l','').replace('h','');
@@ -246,124 +359,127 @@ function cpuStep() {
             cpu.sreg.Z = ((diff & 0xFFFF) === 0) ? 1 : 0;
             cpu.sreg.N = (diff & 0x8000) ? 1 : 0;
             cpu.sreg.V = ((cur & 0x8000) && !(diff & 0x8000)) ? 1 : 0;
-            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
-            break;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V; break;
         }
         case 'inc': {
-            const rIdx = parseReg(a[0]);
-            const prev = cpu.r[rIdx];
+            const reg = parseReg(a[0]);
+            const prev = cpu.r[reg];
             const res = (prev + 1) & 0xFF;
-            cpu.r[rIdx] = res;
+            cpu.r[reg] = res;
             cpu.sreg.Z = (res === 0) ? 1 : 0;
             cpu.sreg.N = (res & 0x80) ? 1 : 0;
             cpu.sreg.V = (prev === 0x7F) ? 1 : 0;
-            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
-            break;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V; break;
         }
         case 'dec': {
-            const rIdx = parseReg(a[0]);
-            const prev = cpu.r[rIdx];
+            const reg = parseReg(a[0]);
+            const prev = cpu.r[reg];
             const res = (prev - 1) & 0xFF;
-            cpu.r[rIdx] = res;
+            cpu.r[reg] = res;
             cpu.sreg.Z = (res === 0) ? 1 : 0;
             cpu.sreg.N = (res & 0x80) ? 1 : 0;
             cpu.sreg.V = (prev === 0x80) ? 1 : 0;
-            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
-            break;
+            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V; break;
         }
         case 'neg': {
-            const res = (0 - cpu.r[parseReg(a[0])]) & 0xFF;
-            cpu.sreg.C = (res !== 0) ? 1 : 0; setFlagsLogic(res); cpu.r[parseReg(a[0])] = res; break;
+            const reg = parseReg(a[0]);
+            const res = (0 - cpu.r[reg]) & 0xFF;
+            setFlagsSub(0, cpu.r[reg], res);
+            cpu.r[reg] = res; break;
         }
         case 'com': {
-            cpu.r[parseReg(a[0])] = (~cpu.r[parseReg(a[0])]) & 0xFF;
-            cpu.sreg.C = 1; setFlagsLogic(cpu.r[parseReg(a[0])]); break;
+            const reg = parseReg(a[0]);
+            const res = (~cpu.r[reg]) & 0xFF;
+            cpu.sreg.C = 1; setFlagsLogic(res);
+            cpu.r[reg] = res; break;
         }
-        case 'cp': {
-            const k = cpu.r[parseReg(a[1])];
-            setFlagsSub(cpu.r[parseReg(a[0])], k, cpu.r[parseReg(a[0])] - k); break;
-        }
-        case 'cpi': {
-            const k = parseVal(a[1]) & 0xFF;
-            setFlagsSub(cpu.r[parseReg(a[0])], k, cpu.r[parseReg(a[0])] - k); break;
-        }
-        case 'cpc': {
-            const k = cpu.r[parseReg(a[1])];
-            const res = cpu.r[parseReg(a[0])] - k - cpu.sreg.C;
-            const prevZ = cpu.sreg.Z;
-            setFlagsSub(cpu.r[parseReg(a[0])], k + cpu.sreg.C, res);
-            cpu.sreg.Z = (prevZ === 1 && (res & 0xFF) === 0) ? 1 : 0; break;
-        }
-        case 'tst': { setFlagsLogic(cpu.r[parseReg(a[0])]); break; }
         case 'and': {
-            cpu.r[parseReg(a[0])] &= cpu.r[parseReg(a[1])]; setFlagsLogic(cpu.r[parseReg(a[0])]); break;
+            const reg = parseReg(a[0]);
+            cpu.r[reg] &= cpu.r[parseReg(a[1])];
+            setFlagsLogic(cpu.r[reg]); break;
         }
         case 'andi': {
-            cpu.r[parseReg(a[0])] &= (parseVal(a[1]) & 0xFF); setFlagsLogic(cpu.r[parseReg(a[0])]); break;
+            const reg = parseReg(a[0]);
+            cpu.r[reg] &= (parseVal(a[1]) & 0xFF);
+            setFlagsLogic(cpu.r[reg]); break;
         }
         case 'or': {
-            cpu.r[parseReg(a[0])] |= cpu.r[parseReg(a[1])]; setFlagsLogic(cpu.r[parseReg(a[0])]); break;
+            const reg = parseReg(a[0]);
+            cpu.r[reg] |= cpu.r[parseReg(a[1])];
+            setFlagsLogic(cpu.r[reg]); break;
         }
         case 'ori': {
-            cpu.r[parseReg(a[0])] |= (parseVal(a[1]) & 0xFF); setFlagsLogic(cpu.r[parseReg(a[0])]); break;
+            const reg = parseReg(a[0]);
+            cpu.r[reg] |= (parseVal(a[1]) & 0xFF);
+            setFlagsLogic(cpu.r[reg]); break;
         }
         case 'eor': {
-            cpu.r[parseReg(a[0])] ^= cpu.r[parseReg(a[1])]; setFlagsLogic(cpu.r[parseReg(a[0])]); break;
+            const reg = parseReg(a[0]);
+            cpu.r[reg] ^= cpu.r[parseReg(a[1])];
+            setFlagsLogic(cpu.r[reg]); break;
         }
-        case 'clr': { cpu.r[parseReg(a[0])] = 0; setFlagsLogic(0); break; }
+        case 'clr': {
+            const reg = parseReg(a[0]);
+            cpu.r[reg] = 0; setFlagsLogic(0); break;
+        }
         case 'ser': { cpu.r[parseReg(a[0])] = 0xFF; break; }
+        case 'tst': { setFlagsLogic(cpu.r[parseReg(a[0])]); break; }
         case 'swap': {
-            const v = cpu.r[parseReg(a[0])];
-            cpu.r[parseReg(a[0])] = ((v & 0x0F) << 4) | ((v & 0xF0) >> 4); break;
+            const reg = parseReg(a[0]);
+            const v = cpu.r[reg];
+            cpu.r[reg] = ((v & 0x0F) << 4) | ((v & 0xF0) >> 4); break;
         }
 
-        // --- Сдвиги с корректными флагами V и S ---
+        // --- Сдвиги ---
         case 'lsl': {
             const reg = parseReg(a[0]);
-            cpu.sreg.C = (cpu.r[reg] & 0x80) ? 1 : 0;
+            const cOut = (cpu.r[reg] & 0x80) !== 0;
             cpu.r[reg] = (cpu.r[reg] << 1) & 0xFF;
-            setFlagsShift(cpu.r[reg]); break;
+            setFlagsShift(cpu.r[reg], cOut); break;
         }
         case 'lsr': {
             const reg = parseReg(a[0]);
-            cpu.sreg.C = cpu.r[reg] & 1;
-            cpu.r[reg] = cpu.r[reg] >> 1;
-            setFlagsShift(cpu.r[reg]); break;
+            const cOut = (cpu.r[reg] & 0x01) !== 0;
+            cpu.r[reg] = (cpu.r[reg] >> 1) & 0xFF;
+            setFlagsShift(cpu.r[reg], cOut); break;
         }
         case 'asr': {
             const reg = parseReg(a[0]);
+            const cOut = (cpu.r[reg] & 0x01) !== 0;
             const msb = cpu.r[reg] & 0x80;
-            cpu.sreg.C = cpu.r[reg] & 1;
             cpu.r[reg] = (cpu.r[reg] >> 1) | msb;
-            setFlagsShift(cpu.r[reg]); break;
-        }
-        case 'ror': {
-            const reg = parseReg(a[0]);
-            const oldC = cpu.sreg.C;
-            cpu.sreg.C = cpu.r[reg] & 1;
-            cpu.r[reg] = (cpu.r[reg] >> 1) | (oldC << 7);
-            setFlagsShift(cpu.r[reg]); break;
+            setFlagsShift(cpu.r[reg], cOut); break;
         }
         case 'rol': {
             const reg = parseReg(a[0]);
             const oldC = cpu.sreg.C;
-            cpu.sreg.C = (cpu.r[reg] & 0x80) ? 1 : 0;
+            const cOut = (cpu.r[reg] & 0x80) !== 0;
             cpu.r[reg] = ((cpu.r[reg] << 1) & 0xFF) | oldC;
-            setFlagsShift(cpu.r[reg]); break;
+            setFlagsShift(cpu.r[reg], cOut); break;
+        }
+        case 'ror': {
+            const reg = parseReg(a[0]);
+            const oldC = cpu.sreg.C;
+            const cOut = (cpu.r[reg] & 0x01) !== 0;
+            cpu.r[reg] = (cpu.r[reg] >> 1) | (oldC << 7);
+            setFlagsShift(cpu.r[reg], cOut); break;
         }
 
+        // --- Флаги и бит-операции ---
         case 'sbi': {
-            let addr = IO[a[0].toUpperCase()] !== undefined ? IO[a[0].toUpperCase()] : parseVal(a[0]);
+            const addr = resolveIoRamAddr(a[0]);
             writeRAM(addr, readRAM(addr) | (1 << parseVal(a[1]))); break;
         }
         case 'cbi': {
-            let addr = IO[a[0].toUpperCase()] !== undefined ? IO[a[0].toUpperCase()] : parseVal(a[0]);
+            const addr = resolveIoRamAddr(a[0]);
             writeRAM(addr, readRAM(addr) & ~(1 << parseVal(a[1]))); break;
         }
         case 'bst': { cpu.sreg.T = (cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) ? 1 : 0; break; }
         case 'bld': {
-            if (cpu.sreg.T) cpu.r[parseReg(a[0])] |= (1 << parseVal(a[1]));
-            else cpu.r[parseReg(a[0])] &= ~(1 << parseVal(a[1])); break;
+            const reg = parseReg(a[0]);
+            const bit = parseVal(a[1]);
+            if (cpu.sreg.T) cpu.r[reg] |= (1 << bit);
+            else cpu.r[reg] &= ~(1 << bit); break;
         }
         case 'sec': { cpu.sreg.C = 1; break; }
         case 'clc': { cpu.sreg.C = 0; break; }
@@ -381,14 +497,29 @@ function cpuStep() {
         case 'cli': { cpu.sreg.I = 0; break; }
         case 'nop': { break; }
 
+        case 'cp': {
+            setFlagsSub(cpu.r[parseReg(a[0])], cpu.r[parseReg(a[1])], cpu.r[parseReg(a[0])] - cpu.r[parseReg(a[1])]); break;
+        }
+        case 'cpi': {
+            const k = parseVal(a[1]) & 0xFF;
+            setFlagsSub(cpu.r[parseReg(a[0])], k, cpu.r[parseReg(a[0])] - k); break;
+        }
+        case 'cpc': {
+            const k = cpu.r[parseReg(a[1])];
+            const res = cpu.r[parseReg(a[0])] - k - cpu.sreg.C;
+            const prevZ = cpu.sreg.Z;
+            setFlagsSub(cpu.r[parseReg(a[0])], k + cpu.sreg.C, res);
+            cpu.sreg.Z = (prevZ === 1 && (res & 0xFF) === 0) ? 1 : 0; break;
+        }
+
         case 'sbrs': { if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) !== 0) nextPC++; break; }
         case 'sbrc': { if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) === 0) nextPC++; break; }
         case 'sbis': {
-            let addr = IO[a[0].toUpperCase()] !== undefined ? IO[a[0].toUpperCase()] : parseVal(a[0]);
+            const addr = resolveIoRamAddr(a[0]);
             if ((readRAM(addr) & (1 << parseVal(a[1]))) !== 0) nextPC++; break;
         }
         case 'sbic': {
-            let addr = IO[a[0].toUpperCase()] !== undefined ? IO[a[0].toUpperCase()] : parseVal(a[0]);
+            const addr = resolveIoRamAddr(a[0]);
             if ((readRAM(addr) & (1 << parseVal(a[1]))) === 0) nextPC++; break;
         }
         case 'jmp':
@@ -405,43 +536,22 @@ function cpuStep() {
         case 'brpl': { if (cpu.sreg.N === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
         case 'brts': { if (cpu.sreg.T === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
         case 'brtc': { if (cpu.sreg.T === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
+        case 'brvs': { if (cpu.sreg.V === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
+        case 'brvc': { if (cpu.sreg.V === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
         case 'call': {
-            writeRAM(cpu.sp, (nextPC >> 8) & 0xFF); writeRAM(cpu.sp - 1, nextPC & 0xFF);
-            cpu.sp = (cpu.sp - 2) & 0xFFFF; nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break;
+            writeRAM(cpu.sp, (nextPC >> 8) & 0xFF);
+            cpu.sp = (cpu.sp - 1) & 0xFFFF;
+            writeRAM(cpu.sp, nextPC & 0xFF);
+            cpu.sp = (cpu.sp - 1) & 0xFFFF;
+            nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break;
         }
         case 'ret': {
-            const high = readRAM(cpu.sp + 2), low = readRAM(cpu.sp + 1);
-            cpu.sp = (cpu.sp + 2) & 0xFFFF; nextPC = (high << 8) | low; break;
+            cpu.sp = (cpu.sp + 1) & 0xFFFF;
+            const low = readRAM(cpu.sp);
+            cpu.sp = (cpu.sp + 1) & 0xFFFF;
+            const high = readRAM(cpu.sp);
+            nextPC = (high << 8) | low; break;
         }
-        case 'sts': { writeRAM(parseVal(a[0]), cpu.r[parseReg(a[1])]); break; }
-        case 'lds': { cpu.r[parseReg(a[0])] = readRAM(parseVal(a[1])); break; }
-        case 'st': {
-            let addr = getPointerAddr(a[0].replace('+', '').replace('-', ''));
-            if (a[0].includes('-')) { addr--; setPointerAddr(a[0].replace('-', ''), addr); }
-            writeRAM(addr, cpu.r[parseReg(a[1])]);
-            if (a[0].includes('+')) setPointerAddr(a[0].replace('+', ''), addr + 1); break;
-        }
-        case 'ld': {
-            let addr = getPointerAddr(a[1].replace('+', '').replace('-', ''));
-            if (a[1].includes('-')) { addr--; setPointerAddr(a[1].replace('-', ''), addr); }
-            cpu.r[parseReg(a[0])] = readRAM(addr);
-            if (a[1].includes('+')) setPointerAddr(a[1].replace('+', ''), addr + 1); break;
-        }
-        case 'std': {
-            const parts = a[0].toLowerCase().split('+');
-            writeRAM(getPointerAddr(parts[0].trim()) + parseInt(parts[1] || '0', 10), cpu.r[parseReg(a[1])]); break;
-        }
-        case 'ldd': {
-            const parts = a[1].toLowerCase().split('+');
-            cpu.r[parseReg(a[0])] = readRAM(getPointerAddr(parts[0].trim()) + parseInt(parts[1] || '0', 10)); break;
-        }
-        case 'lpm': {
-            const dataObj = cpu.program.find(p => p.type === 'DATA_DB');
-            if (dataObj && dataObj.str) cpu.r[parseReg(a[0])] = dataObj.str.charCodeAt(getPointerAddr('z') % dataObj.str.length) || 0;
-            if (a.length > 1 && a[1].includes('+')) setPointerAddr('z', getPointerAddr('z') + 1); break;
-        }
-        case 'push': { writeRAM(cpu.sp, cpu.r[parseReg(a[0])]); cpu.sp = (cpu.sp - 1) & 0xFFFF; break; }
-        case 'pop': { cpu.sp = (cpu.sp + 1) & 0xFFFF; cpu.r[parseReg(a[0])] = readRAM(cpu.sp); break; }
     }
 
     cpu.pc = nextPC;
@@ -450,37 +560,12 @@ function cpuStep() {
     syncHardwareState();
     updateUI();
 
-    // ОСТАНОВ ПО КРАСНОЙ ТОЧКЕ 🔴
     if (cpu.running && cpu.pc < cpu.program.length) {
         if (cpu.breakpoints.has(cpu.program[cpu.pc].lineNum)) {
             haltExecution();
             updateUI();
         }
     }
-}
-
-function setFlagsAdd(a, b, res) {
-    cpu.sreg.H = (((a & 0x0F) + (b & 0x0F)) > 0x0F) ? 1 : 0;
-    cpu.sreg.C = (res > 0xFF) ? 1 : 0; cpu.sreg.Z = ((res & 0xFF) === 0) ? 1 : 0;
-    cpu.sreg.N = (res & 0x80) ? 1 : 0; cpu.sreg.V = (!((a ^ b) & 0x80) && ((a ^ res) & 0x80)) ? 1 : 0;
-    cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
-}
-function setFlagsSub(a, b, res) {
-    b &= 0xFF;
-    cpu.sreg.H = (((a & 0x0F) - (b & 0x0F)) < 0) ? 1 : 0;
-    cpu.sreg.C = (a < b) ? 1 : 0; cpu.sreg.Z = ((res & 0xFF) === 0) ? 1 : 0;
-    cpu.sreg.N = (res & 0x80) ? 1 : 0; cpu.sreg.V = (((a ^ b) & 0x80) && ((a ^ res) & 0x80)) ? 1 : 0;
-    cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
-}
-function setFlagsLogic(val) {
-    cpu.sreg.Z = ((val & 0xFF) === 0) ? 1 : 0; cpu.sreg.N = (val & 0x80) ? 1 : 0;
-    cpu.sreg.V = 0; cpu.sreg.S = cpu.sreg.N;
-}
-function setFlagsShift(val) {
-    cpu.sreg.Z = ((val & 0xFF) === 0) ? 1 : 0;
-    cpu.sreg.N = (val & 0x80) ? 1 : 0;
-    cpu.sreg.V = cpu.sreg.N ^ cpu.sreg.C;
-    cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
 }
 
 /* ================= ГЛАВА 4: ЖЕЛЕЗО И ПЛАТА ================= */
@@ -495,22 +580,33 @@ function toggleVButton(id) {
 }
 
 function syncHardwareState() {
-    let pinb = 0xFF; let pind = 0xFF;
+    let pinb = 0xFF; let pind = 0xFF; let pinc = 0xFF;
     vButtons.forEach(btn => {
         if (btn.pressed) {
             if (btn.port === 'B') pinb &= ~(1 << btn.pin);
             if (btn.port === 'D') pind &= ~(1 << btn.pin);
+            if (btn.port === 'C') pinc &= ~(1 << btn.pin);
         }
     });
 
-    // Учет направления выводов (если DDR=1, вывод читает состояние порта)
     const ddrb = readRAM(IO.DDRB); const portb = readRAM(IO.PORTB);
     const ddrd = readRAM(IO.DDRD); const portd = readRAM(IO.PORTD);
+    const ddrc = readRAM(IO.DDRC); const portc = readRAM(IO.PORTC);
     pinb = (pinb & ~ddrb) | (portb & ddrb);
     pind = (pind & ~ddrd) | (portd & ddrd);
+    pinc = (pinc & ~ddrc) | (portc & ddrc);
 
-    writeRAM(IO.PINB, pinb); writeRAM(IO.PIND, pind);
+    writeRAM(IO.PINB, pinb); writeRAM(IO.PIND, pind); writeRAM(IO.PINC, pinc);
     writeRAM(IO.SPL, cpu.sp & 0xFF); writeRAM(IO.SPH, (cpu.sp >> 8) & 0xFF);
+
+    let sregByte = 0;
+    const flags = ['C','Z','N','V','S','H','T','I'];
+    flags.forEach((f, idx) => { if (cpu.sreg[f]) sregByte |= (1 << idx); });
+    cpu.ram[IO.SREG] = sregByte;
+
+    for (let i = 0; i < 32; i++) {
+        cpu.ram[i] = cpu.r[i];
+    }
 }
 
 function selectLedPort(portLetter) {
@@ -551,7 +647,7 @@ function renderHardware() {
 
 function clearUart() { cpu.uartLog = ""; renderHardware(); }
 
-/* ================= ГЛАВА 5: ИГРОВОЙ ЦИКЛ (ЗАПУСК / ПАУЗА) ================= */
+/* ================= ГЛАВА 5: ИГРОВОЙ ЦИКЛ ================= */
 
 function haltExecution() {
     cpu.running = false; clearTimeout(cpu.timer);
@@ -574,12 +670,17 @@ function toggleRun() {
 
 function runLoop() {
     if (!cpu.running) return;
-    const batchSize = Math.max(1, Math.floor(cpu.speed / 20));
+    let delay = 20; let batchSize = 1;
+    if (cpu.speed <= 50) {
+        delay = Math.max(16, Math.floor(1000 / cpu.speed)); batchSize = 1;
+    } else {
+        delay = 20; batchSize = Math.max(1, Math.round(cpu.speed / 50));
+    }
     for (let i = 0; i < batchSize; i++) {
         cpuStep();
         if (!cpu.running || cpu.error) { haltExecution(); break; }
     }
-    if (cpu.running) cpu.timer = setTimeout(runLoop, Math.max(10, Math.floor(1000 / cpu.speed)));
+    if (cpu.running) cpu.timer = setTimeout(runLoop, delay);
 }
 
 function cpuReset() {
@@ -589,7 +690,6 @@ function cpuReset() {
     cpu.sreg = { C:0, Z:0, N:0, V:0, S:0, H:0, T:0, I:0 };
     cpu.uartLog = "";
 
-    // Сброс и разжатие кнопок
     vButtons.forEach(btn => {
         btn.pressed = false;
         document.getElementById('vbtn_' + btn.id)?.classList.remove('latched');
@@ -622,11 +722,12 @@ function setMemFormat(format) {
 
 function renderMemoryDumps() {
     const memBox = document.getElementById('memDumpView');
-    if (!memBox) return; // Защита от вылета
+    if (!memBox) return; // Надежная защита
 
     let output = '';
     if (cpu.memView === 'ram') {
-        for (let addr = 0x0100; addr <= 0x0138; addr += 8) {
+        // Вывод с адреса 0x0100 до 0x0178 (можно листать все строки)
+        for (let addr = 0x0100; addr <= 0x0178; addr += 8) {
             let bytes = [];
             for (let b = 0; b < 8; b++) {
                 let val = readRAM(addr + b);
@@ -681,7 +782,7 @@ function updateUI() {
 
 /* ================= ГЛАВА 7: РЕДАКТОР И ПОДСВЕТКА СИНТАКСИСА ================= */
 
-const KNOWN_OPS = new Set(['ldi','mov','add','adc','sub','subi','sbc','sbci','mul','muls','adiw','sbiw','inc','dec','neg','com','and','andi','or','ori','eor','clr','ser','cpi','cp','cpc','tst','swap','ror','rol','lsl','lsr','asr','sbi','cbi','bst','bld','sbrs','sbrc','sbis','sbic','sec','clc','sez','clz','sen','cln','sev','clv','set','clt','seh','clh','sei','cli','st','std','ld','ldd','lpm','sts','lds','push','pop','jmp','rjmp','breq','brne','brcs','brcc','brlo','brsh','brlt','brge','brmi','brpl','brts','brtc','call','ret','in','out','break','nop']);
+const KNOWN_OPS = new Set(['ldi','mov','add','adc','sub','subi','sbc','sbci','mul','muls','adiw','sbiw','inc','dec','neg','com','and','andi','or','ori','eor','clr','ser','cpi','cp','cpc','tst','swap','ror','rol','lsl','lsr','asr','sbi','cbi','bst','bld','sbrs','sbrc','sbis','sbic','sec','clc','sez','clz','sen','cln','sev','clv','set','clt','seh','clh','sei','cli','st','std','ld','ldd','lpm','sts','lds','push','pop','jmp','rjmp','breq','brne','brcs','brcc','brlo','brsh','brlt','brge','brmi','brpl','brts','brtc','brvs','brvc','call','ret','in','out','break','nop']);
 
 function highlightCode(rawText) {
     return rawText.split('\n').map(line => {
@@ -734,7 +835,7 @@ function scrollToSlide(index) {
     document.querySelectorAll('.nav-screen-btn').forEach((b, i) => b.classList.toggle('active', i === index));
 }
 
-/* ================= ГЛАВА 8: ПРИМЕРЫ ПРОГРАММ И СТАРТ ================= */
+/* ================= ГЛАВА 8: ПОЛНЫЙ НАБОР ПРИМЕРОВ ================= */
 
 const PROGRAMS = {
     empty: { hint: "", code: `; Новый чистый файл\n.include "m328pdef.inc"\n\nstart:\n    \n` },
@@ -744,7 +845,31 @@ const PROGRAMS = {
     button_led: { hint: "Нажмите кнопку <b>K1</b> — светодиод <b>L (PB5)</b> загорится.", code: `; Кнопка включает светодиод L\n.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` },
     fibonacci: { hint: "Нажмите <b>«Пуск»</b>: ячейки памяти заполнятся числами Фибоначчи!", code: `; Числа Фибоначчи в памяти\n.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` },
     uart_tx: { hint: "Отправка текста в виртуальный монитор UART.", code: `; Отправка текста в терминал (UART)\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x48\n    out UDR0, r16\n    ldi r16, 0x69\n    out UDR0, r16\n    ldi r16, 0x21\n    out UDR0, r16\nstop:\n    break` },
-    alu_flags: { hint: "Арифметика: наблюдайте за флагами SREG при переполнении и нуле.", code: `; Арифметика и флаги переполнения\n.include "m328pdef.inc"\nstart:\n    ldi r16, 250\n    ldi r17, 10\n    add r16, r17\n    ldi r18, 5\n    subi r18, 5\n    sec\n    clz\n    break` }
+    alu_flags: { hint: "Арифметика: наблюдайте за флагами SREG при переполнении и нуле.", code: `; Арифметика и флаги переполнения\n.include "m328pdef.inc"\nstart:\n    ldi r16, 250\n    ldi r17, 10\n    add r16, r17\n    ldi r18, 5\n    subi r18, 5\n    sec\n    clz\n    break` },
+
+    // Комплексный тест новых возможностей
+    test_all: {
+        hint: "<b>Тест всех новых возможностей</b>: Управление всеми флагами SREG, SUBI -3, сдвиги и порты.",
+        code: `; Тест новых команд, флагов и SUBI -3\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x08\n    out sph, r16\n    ldi r16, 0xff\n    out spl, r16\n\n    ; Флаги и прерывания\n    sec\n    clc\n    sez\n    clz\n    sen\n    cln\n    sev\n    clv\n    set\n    clt\n    seh\n    clh\n    sei\n    cli\n    nop\n\n    ; Вычитание отрицательного числа (ЛР 3)\n    ldi r17, 10\n    subi r17, -3 ; r17 = 13 (0x0D), C = 1\n\n    ; Сдвиги с точным расчётом V = N xor C\n    ldi r18, 0x80\n    lsl r18\n    ldi r18, 0x41\n    lsr r18\n\n    ; Запись и чтение порта D\n    ldi r16, 0xAA\n    out PORTD, r16\n    in r19, PORTD\n\n    break\nfinish:\n    rjmp finish`
+    },
+
+    // Лабораторные работы
+    example1_lab1: {
+        hint: "<b>ЛР 1 (Example 1)</b>: Инициализация стека, пересылка данных, косвенная адресация X и стек (PUSH/POP).",
+        code: `; Пример 1 из Лабораторной работы №1\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 10\n    ldi r17, 0x10\n    ldi r18, 0x20\n    ldi r19, 0x30\n    mov r1, r16\n    mov r2, r17\n    mov r3, r18\n    mov r4, r18\n    in r4, portd\n    ldi xh, 0x01\n    ldi xl, 0\n    st x+, r1\n    st x+, r2\n    st x+, r3\n    st x+, r4\n    ld r10, -x\n    sts 0x0110, r16\n    lds r5, 0x0100\n    push r1\n    push r2\n    push r3\n    push r4\n    pop r14\n    pop r13\n    pop r12\n    pop r11\n    ret`
+    },
+    example2_lab2: {
+        hint: "<b>ЛР 2 (Example 2.1)</b>: Логические операции AND, OR, EOR, TST, SWAP, BST/BLD, а также SEI и CLI.",
+        code: `; Пример 2.1 из Лабораторной работы №2\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 0x0f\n    ldi r17, 0x45\n    ldi r18, 0x67\n    ldi r19, 0x89\n    ldi r20, 0x18\n    and r17, r16\n    andi r17, 0b00000010\n    or r18, r16\n    tst r16\n    eor r19, r16\n    eor r19, r19\n    mov r17, r20\n    and r17, r16\n    swap r16\n    and r18, r16\n    or r17, r18\n    bst r16, 7\n    bld r20, 2\n    sei\n    cli\n    ret`
+    },
+    example4_lab3: {
+        hint: "<b>ЛР 3 (Example 4)</b>: Циклы, работа с тремя массивами в ОЗУ, SUBI с отрицательными константами (-3, -5).",
+        code: `; Пример 4 из Лабораторной работы №3\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\ncall pp1\nm:  jmp m\n\npp1:\n    ldi xh, 1\n    ldi yh, 1\n    ldi zh, 1\n    ldi xl, 0x00\n    ldi yl, 0x10\n    ldi zl, 0x20\n    ldi r17, 10\n    ldi r18, 20\nm1:\n    st x+, r17\n    st y+, r18\n    mov r19, r17\n    add r19, r18\n    st z+, r19\n    subi r17, -3\n    subi r18, -5\n    cpi xl, 0x10\n    brne m1\n    ret`
+    },
+    button_led_lab4: {
+        hint: "<b>ЛР 4 (Пример 3)</b>: Опрос кнопки с подтяжкой PULL-UP (PB0) и включение светодиода L (PB5).",
+        code: `; Пример 3 из Лабораторной работы №4\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x20\n    out DDRB, r16\n    ldi r16, 0x01\n    out PORTB, r16\nloop:\n    in r17, PINB\n    bst r17, 0\n    brts led_off\n    brtc led_on\n    rjmp loop\nled_on:\n    sbi PORTB, 5\n    rjmp loop\nled_off:\n    cbi PORTB, 5\n    rjmp loop`
+    }
 };
 
 function loadSelectedExample() {
