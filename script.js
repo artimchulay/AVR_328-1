@@ -855,20 +855,20 @@ const PROGRAMS = {
 
     // Лабораторные работы
     example1_lab1: {
-        hint: "<b>ЛР 1 (Example 1)</b>: Инициализация стека, пересылка данных, косвенная адресация X и стек (PUSH/POP).",
-        code: `; Пример 1 из Лабораторной работы №1\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 10\n    ldi r17, 0x10\n    ldi r18, 0x20\n    ldi r19, 0x30\n    mov r1, r16\n    mov r2, r17\n    mov r3, r18\n    mov r4, r18\n    in r4, portd\n    ldi xh, 0x01\n    ldi xl, 0\n    st x+, r1\n    st x+, r2\n    st x+, r3\n    st x+, r4\n    ld r10, -x\n    sts 0x0110, r16\n    lds r5, 0x0100\n    push r1\n    push r2\n    push r3\n    push r4\n    pop r14\n    pop r13\n    pop r12\n    pop r11\n    ret`
+        hint: "<b> 1 (Example 1)</b>: Инициализация стека, пересылка данных, косвенная адресация X и стек (PUSH/POP).",
+        code: `; Пример 1\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 10\n    ldi r17, 0x10\n    ldi r18, 0x20\n    ldi r19, 0x30\n    mov r1, r16\n    mov r2, r17\n    mov r3, r18\n    mov r4, r18\n    in r4, portd\n    ldi xh, 0x01\n    ldi xl, 0\n    st x+, r1\n    st x+, r2\n    st x+, r3\n    st x+, r4\n    ld r10, -x\n    sts 0x0110, r16\n    lds r5, 0x0100\n    push r1\n    push r2\n    push r3\n    push r4\n    pop r14\n    pop r13\n    pop r12\n    pop r11\n    ret`
     },
     example2_lab2: {
-        hint: "<b>ЛР 2 (Example 2.1)</b>: Логические операции AND, OR, EOR, TST, SWAP, BST/BLD, а также SEI и CLI.",
-        code: `; Пример 2.1 из Лабораторной работы №2\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 0x0f\n    ldi r17, 0x45\n    ldi r18, 0x67\n    ldi r19, 0x89\n    ldi r20, 0x18\n    and r17, r16\n    andi r17, 0b00000010\n    or r18, r16\n    tst r16\n    eor r19, r16\n    eor r19, r19\n    mov r17, r20\n    and r17, r16\n    swap r16\n    and r18, r16\n    or r17, r18\n    bst r16, 7\n    bld r20, 2\n    sei\n    cli\n    ret`
+        hint: "<b> 2 (Example 2.1)</b>: Логические операции AND, OR, EOR, TST, SWAP, BST/BLD, а также SEI и CLI.",
+        code: `; Пример 2\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 0x0f\n    ldi r17, 0x45\n    ldi r18, 0x67\n    ldi r19, 0x89\n    ldi r20, 0x18\n    and r17, r16\n    andi r17, 0b00000010\n    or r18, r16\n    tst r16\n    eor r19, r16\n    eor r19, r19\n    mov r17, r20\n    and r17, r16\n    swap r16\n    and r18, r16\n    or r17, r18\n    bst r16, 7\n    bld r20, 2\n    sei\n    cli\n    ret`
     },
     example4_lab3: {
-        hint: "<b>ЛР 3 (Example 4)</b>: Циклы, работа с тремя массивами в ОЗУ, SUBI с отрицательными константами (-3, -5).",
-        code: `; Пример 4 из Лабораторной работы №3\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\ncall pp1\nm:  jmp m\n\npp1:\n    ldi xh, 1\n    ldi yh, 1\n    ldi zh, 1\n    ldi xl, 0x00\n    ldi yl, 0x10\n    ldi zl, 0x20\n    ldi r17, 10\n    ldi r18, 20\nm1:\n    st x+, r17\n    st y+, r18\n    mov r19, r17\n    add r19, r18\n    st z+, r19\n    subi r17, -3\n    subi r18, -5\n    cpi xl, 0x10\n    brne m1\n    ret`
+        hint: "<b> 3 (Example 4)</b>: Циклы, работа с тремя массивами в ОЗУ, SUBI с отрицательными константами (-3, -5).",
+        code: `; Пример 4 \n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\ncall pp1\nm:  jmp m\n\npp1:\n    ldi xh, 1\n    ldi yh, 1\n    ldi zh, 1\n    ldi xl, 0x00\n    ldi yl, 0x10\n    ldi zl, 0x20\n    ldi r17, 10\n    ldi r18, 20\nm1:\n    st x+, r17\n    st y+, r18\n    mov r19, r17\n    add r19, r18\n    st z+, r19\n    subi r17, -3\n    subi r18, -5\n    cpi xl, 0x10\n    brne m1\n    ret`
     },
     button_led_lab4: {
-        hint: "<b>ЛР 4 (Пример 3)</b>: Опрос кнопки с подтяжкой PULL-UP (PB0) и включение светодиода L (PB5).",
-        code: `; Пример 3 из Лабораторной работы №4\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x20\n    out DDRB, r16\n    ldi r16, 0x01\n    out PORTB, r16\nloop:\n    in r17, PINB\n    bst r17, 0\n    brts led_off\n    brtc led_on\n    rjmp loop\nled_on:\n    sbi PORTB, 5\n    rjmp loop\nled_off:\n    cbi PORTB, 5\n    rjmp loop`
+        hint: "<b> 4 (Пример 3)</b>: Опрос кнопки с подтяжкой PULL-UP (PB0) и включение светодиода L (PB5).",
+        code: `; Пример 3\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x20\n    out DDRB, r16\n    ldi r16, 0x01\n    out PORTB, r16\nloop:\n    in r17, PINB\n    bst r17, 0\n    brts led_off\n    brtc led_on\n    rjmp loop\nled_on:\n    sbi PORTB, 5\n    rjmp loop\nled_off:\n    cbi PORTB, 5\n    rjmp loop`
     }
 };
 
