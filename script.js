@@ -903,7 +903,6 @@ function updateUI() {
 function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-
 function highlightCode(rawText) {
     if (!rawText) return '';
     const lines = rawText.split('\n');
@@ -955,7 +954,6 @@ function highlightCode(rawText) {
         return p + (comment ? `<span class="syn-com">${escapeHtml(comment)}</span>` : '');
     }).join('\n');
 }
-
 function updateSyntax() {
     const code = document.getElementById('asmCode').value;
     document.getElementById('highlightingContent').innerHTML = highlightCode(code) + '\n';
