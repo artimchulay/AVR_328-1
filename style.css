@@ -160,22 +160,53 @@ html, body {
 .editor-container {
     flex: 1; height: 100%; min-height: 350px; position: relative; overflow: hidden;
 }
+
+/* ЕДИНЫЕ СВОЙСТВА ШРИФТА ДЛЯ ПОЛЯ ВВОДА И ПОДЛОЖКИ (ГАРАНТИЯ СОВПАДЕНИЯ ДЛЯ ПЛАНШЕТОВ HUAWEI) */
+pre#highlighting, textarea#asmCode, pre#highlighting code, pre#highlighting span {
+    font-family: monospace, ui-monospace, 'Courier New' !important;
+    font-size: 14px !important;
+    line-height: 22px !important;
+    font-weight: 400 !important;
+    font-style: normal !important;
+    letter-spacing: 0px !important;
+    word-spacing: 0px !important;
+    tab-size: 4 !important;
+    -webkit-text-size-adjust: none !important;
+    text-rendering: optimizeLegibility !important;
+}
+
 pre#highlighting, textarea#asmCode {
     box-sizing: border-box; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 13px; line-height: var(--line-height);
-    letter-spacing: 0; tab-size: 4; border: none; outline: none; overflow: auto;
+    margin: 0; padding: 10px 12px; border: none; outline: none; overflow: auto;
+    -webkit-appearance: none;
+    border-radius: 0;
 }
-pre#highlighting code { font-family: inherit; font-size: inherit; line-height: inherit; letter-spacing: inherit; }
-textarea#asmCode { background: transparent !important; color: transparent !important; caret-color: #38bdf8 !important; resize: none; z-index: 2; user-select: text; }
-pre#highlighting { background: transparent; color: #e2e8f0; pointer-events: none; z-index: 1; overflow: hidden; }
 
-.syn-op { color: var(--syn-op); font-weight: 700; }
-.syn-com { color: var(--syn-com); font-style: normal; font-family: inherit; }
-.syn-lbl { color: var(--syn-lbl); font-weight: 700; }
-.syn-dir { color: var(--syn-dir); }
-.syn-num { color: var(--syn-num); }
-.syn-kw { color: var(--syn-kw); font-weight: 700; }
-.syn-type { color: var(--syn-type); font-weight: 700; }
+textarea#asmCode {
+    background: transparent !important;
+    color: transparent !important;
+    caret-color: #38bdf8 !important;
+    resize: none;
+    z-index: 2;
+    user-select: text;
+}
+
+pre#highlighting {
+    background: transparent;
+    color: #e2e8f0;
+    pointer-events: none;
+    z-index: 1;
+    overflow: hidden;
+}
+
+/* ЦВЕТОВАЯ ПОДСВЕТКА БЕЗ ЖИРНОСТИ (ПРЕДОТВРАЩАЕТ СДВИГ БУКВ) */
+.syn-op   { color: var(--syn-op);   font-weight: normal; }
+.syn-com  { color: var(--syn-com);  font-style: normal; font-weight: normal; }
+.syn-lbl  { color: var(--syn-lbl);  font-weight: normal; }
+.syn-dir  { color: var(--syn-dir);  font-weight: normal; }
+.syn-num  { color: var(--syn-num);  font-weight: normal; }
+.syn-kw   { color: var(--syn-kw);   font-weight: normal; }
+.syn-type { color: var(--syn-type); font-weight: normal; }
 
 /* 4. ПЛАТА ВВОДА-ВЫВОДА */
 .board-scroll-area { flex: 1; height: 100%; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
