@@ -1,6 +1,6 @@
 /* =========================================================
    ЯДРО ЭМУЛЯТОРА AVR ATmega328P (script.js - Монолит)
-   Исправленная подсветка синтаксиса без дублирования текста
+   С краткими комментариями-шапками, точной высотой и АЛУ
    ========================================================= */
 
 /* ================= ГЛАВА 1: ПАМЯТЬ И СОСТОЯНИЕ ================= */
@@ -50,7 +50,7 @@ const vButtons = [
     { id: 'K8', port: 'B', pin: 4, pressed: false }
 ];
 
-/* ================= ГЛАВА 2: ТРАНСЛЯТОР MICRO-C -> ASSEMBLER ================= */
+/* ================= ГЛАВА 2: ТРАНСЛЯТОР MICRO-C ================= */
 
 function evaluateCExpression(expr) {
     if (!expr) return 0;
@@ -904,7 +904,6 @@ function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// 100% ТОЧНАЯ ПОДСВЕТКА БЕЗ СМЕЩЕНИЙ И ДУБЛИРОВАНИЯ
 function highlightCode(rawText) {
     if (!rawText) return '';
     const lines = rawText.split('\n');
@@ -1039,89 +1038,93 @@ function scrollToSlide(index) {
     document.querySelectorAll('.nav-screen-btn').forEach((b, i) => b.classList.toggle('active', i === index));
 }
 
-/* ================= ГЛАВА 9: ВЫВЕРЕННЫЕ ПРИМЕРЫ ПРОГРАММ ================= */
+/* ================= ГЛАВА 9: ПРИМЕРЫ С ШАПКАМИ-КОММЕНТАРИЯМИ ================= */
 
 const PROGRAMS = {
-    empty: { hint: "", lang: "c", code: `#include <avr/io.h>\n\nint main(void)\n{\n    \n    while (1)\n    {\n        \n    }\n}` },
+    empty: { 
+        hint: "", 
+        lang: "c", 
+        code: `// Новый чистый файл на Си\n#include <avr/io.h>\n\nint main(void)\n{\n    \n    while (1)\n    {\n        \n    }\n}` 
+    },
 
     c_zadanie5: {
         hint: "Нажатие кнопок K1 (PD2), K2 (PD3), K3 (PD4) переключает соответствующие светодиоды в режиме триггера.",
         lang: "c",
-        code: `#define F_CPU 16000000UL\n#include <avr/io.h>\n#include <util/delay.h>\n\nint main(void)\n{\n    DDRD |= (1 << DDD0) | (1 << DDD1);\n    DDRB |= (1 << DDB5);\n\n    PORTD &= ~((1 << PORTD0) | (1 << PORTD1));\n    PORTB &= ~(1 << PORTB5);\n\n    DDRD &= ~((1 << DDD2) | (1 << DDD3) | (1 << DDD4));\n    PORTD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4);\n\n    while (1)\n    {\n        if (!(PIND & (1 << PIND2)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND2)))\n            {\n                PORTD ^= (1 << PORTD0);\n                while (!(PIND & (1 << PIND2)));\n                _delay_ms(40);\n            }\n        }\n\n        if (!(PIND & (1 << PIND3)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND3)))\n            {\n                PORTD ^= (1 << PORTD1);\n                while (!(PIND & (1 << PIND3)));\n                _delay_ms(40);\n            }\n        }\n\n        if (!(PIND & (1 << PIND4)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND4)))\n            {\n                PORTB ^= (1 << PORTB5);\n                while (!(PIND & (1 << PIND4)));\n                _delay_ms(40);\n            }\n        }\n    }\n}`
+        code: `// Управление светодиодами кнопками-триггерами (PD2..PD4 -> PD0, PD1, PB5)\n#define F_CPU 16000000UL\n#include <avr/io.h>\n#include <util/delay.h>\n\nint main(void)\n{\n    // Настройка линий светодиодов на ВЫХОД:\n    DDRD |= (1 << DDD0) | (1 << DDD1); // PD0 (RX) и PD1 (TX)\n    DDRB |= (1 << DDB5);               // PB5 (светодиод L)\n\n    // Гасим все светодиоды:\n    PORTD &= ~((1 << PORTD0) | (1 << PORTD1));\n    PORTB &= ~(1 << PORTB5);\n\n    // Настройка линий кнопок на ВХОД с подтяжкой PULL-UP:\n    DDRD &= ~((1 << DDD2) | (1 << DDD3) | (1 << DDD4));\n    PORTD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4);\n\n    while (1)\n    {\n        // Кнопка K1 (PD2) переключает светодиод RX (PD0)\n        if (!(PIND & (1 << PIND2)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND2)))\n            {\n                PORTD ^= (1 << PORTD0);\n                while (!(PIND & (1 << PIND2)));\n                _delay_ms(40);\n            }\n        }\n\n        // Кнопка K2 (PD3) переключает светодиод TX (PD1)\n        if (!(PIND & (1 << PIND3)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND3)))\n            {\n                PORTD ^= (1 << PORTD1);\n                while (!(PIND & (1 << PIND3)));\n                _delay_ms(40);\n            }\n        }\n\n        // Кнопка K3 (PD4) переключает светодиод L (PB5)\n        if (!(PIND & (1 << PIND4)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND4)))\n            {\n                PORTB ^= (1 << PORTB5);\n                while (!(PIND & (1 << PIND4)));\n                _delay_ms(40);\n            }\n        }\n    }\n}`
     },
 
     c_zadanie2: {
         hint: "Маятниковое переключение: биты PD6 и PD7 активны, остальные занулены маской 0xC0.",
         lang: "c",
-        code: `#define F_CPU 16000000UL\n#include <avr/io.h>\n#include <util/delay.h>\n\nint main(void)\n{\n    DDRD = (1 << DDD6) | (1 << DDD7);\n    uint8_t count = 0;\n    int8_t step = 1;\n\n    while (1)\n    {\n        PORTD = count & 0xC0;\n        if (count == 255)\n        {\n            step = -1;\n        }\n        else if (count == 0)\n        {\n            step = 1;\n        }\n        count += step;\n        _delay_us(10);\n    }\n}`
+        code: `// Бегущий маятник: поочерёдное переключение битов PD6 и PD7\n#define F_CPU 16000000UL\n#include <avr/io.h>\n#include <util/delay.h>\n\nint main(void)\n{\n    DDRD = (1 << DDD6) | (1 << DDD7);\n    uint8_t count = 0;\n    int8_t step = 1;\n\n    while (1)\n    {\n        PORTD = count & 0xC0;\n        if (count == 255)\n        {\n            step = -1;\n        }\n        else if (count == 0)\n        {\n            step = 1;\n        }\n        count += step;\n        _delay_us(10);\n    }\n}`
     },
 
     c_example2: {
-        hint: "Мигание светодиодом L (PB5) через счётчик x.",
+        hint: "Мигание светодиодом L (PB5) через длинный счётчик x.",
         lang: "c",
-        code: `#include <avr/io.h>\n\nuint32_t x = 0;\nint flag = 0;\n\nint main(void)\n{\n    DDRB = 0x20;\n    while (1)\n    {\n        if (x == 800000)\n        {\n            if (flag == 0)\n            {\n                PORTB = 0x20; flag = 1;\n            }\n            else\n            {\n                PORTB = 0x00; flag = 0;\n            }\n            x = 0;\n        }\n        x++;\n    }\n}`
+        code: `// Мигание светодиодом L (PB5) через 32-битный счётчик\n#include <avr/io.h>\n\nuint32_t x = 0;\nint flag = 0;\n\nint main(void)\n{\n    DDRB = 0x20;\n    while (1)\n    {\n        if (x == 800000)\n        {\n            if (flag == 0)\n            {\n                PORTB = 0x20; flag = 1;\n            }\n            else\n            {\n                PORTB = 0x00; flag = 0;\n            }\n            x = 0;\n        }\n        x++;\n    }\n}`
     },
 
     c_example3: {
         hint: "Нажатие кнопки K4 (PB0) включает светодиод L (PB5).",
         lang: "c",
-        code: `#include <avr/io.h>\n\nint main(void)\n{\n    DDRB = 0x20;\n    PORTB |= 0x01;\n    while (1)\n    {\n        if ((PINB & 0x01) == 0)\n            PORTB |= 0x20;\n        else\n            PORTB &= ~0x20;\n    }\n}`
+        code: `// Опрос кнопки PB0 (с подтяжкой) и включение светодиода L (PB5)\n#include <avr/io.h>\n\nint main(void)\n{\n    DDRB = 0x20;\n    PORTB |= 0x01;\n    while (1)\n    {\n        if ((PINB & 0x01) == 0)\n            PORTB |= 0x20;\n        else\n            PORTB &= ~0x20;\n    }\n}`
     },
 
     sort_ram: { 
-        hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и сортирует их по возрастанию.", 
+        hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и <b>сортирует их по возрастанию</b>.", 
         lang: "asm",
-        code: `.include "m328pdef.inc"\n\nldi r16, 0x16\nsts 0x0100, r16\nldi r16, 0x03\nsts 0x0101, r16\nldi r16, 0x25\nsts 0x0102, r16\nldi r16, 0x45\nsts 0x0103, r16\nldi r16, 0x01\nsts 0x0104, r16\n\nldi r20, 5\nout_1:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r21, 4\n\nin_1:\n    ld r16, x+\n    ld r17, x\n    cp r16, r17\n    brlo no_s\n\n    st x, r16\n    st -x, r17\n    adiw xl, 1\n\nno_s:\n    dec r21\n    brne in_1\n    dec r20\n    brne out_1\n\nfinish:\n    break\n    rjmp finish` 
+        code: `; Сортировка массива из 5 чисел в ОЗУ (0x0100..0x0104) по возрастанию\n.include "m328pdef.inc"\n\nldi r16, 0x16\nsts 0x0100, r16\nldi r16, 0x03\nsts 0x0101, r16\nldi r16, 0x25\nsts 0x0102, r16\nldi r16, 0x45\nsts 0x0103, r16\nldi r16, 0x01\nsts 0x0104, r16\n\nldi r20, 5\nout_1:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r21, 4\n\nin_1:\n    ld r16, x+\n    ld r17, x\n    cp r16, r17\n    brlo no_s\n\n    st x, r16\n    st -x, r17\n    adiw xl, 1\n\nno_s:\n    dec r21\n    brne in_1\n    dec r20\n    brne out_1\n\nfinish:\n    break\n    rjmp finish` 
     },
     button_led: { 
-        hint: "Нажмите кнопку K1 (PD2) — светодиод L (PB5) загорится.", 
+        hint: "Нажмите кнопку <b>K1 (PD2)</b> — светодиод <b>L (PB5)</b> загорится.", 
         lang: "asm",
-        code: `.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` 
+        code: `; Нажатие кнопки K1 (PD2) зажигает светодиод L (PB5)\n.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` 
     },
     btn_counter: { 
-        hint: "Нажмите кнопку K4 (PB0) (+1) или K5 (PB1) (-1). Порт D покажет результат!", 
+        hint: "Нажмите кнопку <b>K4 (PB0)</b> (+1) или <b>K5 (PB1)</b> (-1). Порт D покажет результат!", 
         lang: "asm",
-        code: `.include "m328pdef.inc"\nstart:\n    ser r16\n    out DDRD, r16\n    cbi DDRB, 0\n    cbi DDRB, 1\n    sbi PORTB, 0\n    sbi PORTB, 1\n    clr r0\nloop:\n    out PORTD, r0\n    in r17, PINB\n    sbrs r17, 0\n    inc r0\n    sbrs r17, 1\n    dec r0\n    rjmp loop` 
+        code: `; Счётчик на Порту D по кнопкам K4 (PB0: +1) и K5 (PB1: -1)\n.include "m328pdef.inc"\nstart:\n    ser r16\n    out DDRD, r16\n    cbi DDRB, 0\n    cbi DDRB, 1\n    sbi PORTB, 0\n    sbi PORTB, 1\n    clr r0\nloop:\n    out PORTD, r0\n    in r17, PINB\n    sbrs r17, 0\n    inc r0\n    sbrs r17, 1\n    dec r0\n    rjmp loop` 
     },
     led_blink: { 
         hint: "Автоматический счётчик от 0 до 255 на Порту D.", 
         lang: "asm",
-        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0xFF\n    out DDRD, r16\n    ldi r17, 0x00\nloop:\n    out PORTD, r17\n    inc r17\n    rjmp loop` 
+        code: `; Автоматический счётчик от 0 до 255 на Порту D (бегущие огни)\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0xFF\n    out DDRD, r16\n    ldi r17, 0x00\nloop:\n    out PORTD, r17\n    inc r17\n    rjmp loop` 
     },
     fibonacci: { 
-        hint: "Нажмите «Пуск»: ячейки памяти заполнятся числами Фибоначчи!", 
+        hint: "Нажмите <b>«Пуск»</b>: ячейки памяти заполнятся числами Фибоначчи!", 
         lang: "asm",
-        code: `.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` 
+        code: `; Заполнение памяти ОЗУ (0x0100+) числами Фибоначчи\n.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` 
     },
     uart_tx: { 
         hint: "Отправка текста в виртуальный монитор UART.", 
         lang: "asm",
-        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x48\n    out UDR0, r16\n    ldi r16, 0x69\n    out UDR0, r16\n    ldi r16, 0x21\n    out UDR0, r16\nstop:\n    break` 
+        code: `; Отправка текстовых символов в терминал UART (регистр UDR0)\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x48\n    out UDR0, r16\n    ldi r16, 0x69\n    out UDR0, r16\n    ldi r16, 0x21\n    out UDR0, r16\nstop:\n    break` 
     },
     alu_flags: { 
         hint: "Арифметика: наблюдайте за флагами SREG при переполнении и нуле.", 
         lang: "asm",
-        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 250\n    ldi r17, 10\n    add r16, r17\n    ldi r18, 5\n    subi r18, 5\n    sec\n    clz\n    break` 
+        code: `; Демонстрация арифметики и флагов переполнения в SREG\n.include "m328pdef.inc"\nstart:\n    ldi r16, 250\n    ldi r17, 10\n    add r16, r17\n    ldi r18, 5\n    subi r18, 5\n    sec\n    clz\n    break` 
     },
     example1_lab1: {
         hint: "Инициализация стека, пересылка данных, косвенная адресация X и стек (PUSH/POP).",
         lang: "asm",
-        code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 10\n    ldi r17, 0x10\n    ldi r18, 0x20\n    ldi r19, 0x30\n    mov r1, r16\n    mov r2, r17\n    mov r3, r18\n    mov r4, r18\n    in r4, portd\n    ldi xh, 0x01\n    ldi xl, 0\n    st x+, r1\n    st x+, r2\n    st x+, r3\n    st x+, r4\n    ld r10, -x\n    sts 0x0110, r16\n    lds r5, 0x0100\n    push r1\n    push r2\n    push r3\n    push r4\n    pop r14\n    pop r13\n    pop r12\n    pop r11\n    ret`
+        code: `; Пересылка данных, косвенная адресация указателем X и работа со стеком\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 10\n    ldi r17, 0x10\n    ldi r18, 0x20\n    ldi r19, 0x30\n    mov r1, r16\n    mov r2, r17\n    mov r3, r18\n    mov r4, r18\n    in r4, portd\n    ldi xh, 0x01\n    ldi xl, 0\n    st x+, r1\n    st x+, r2\n    st x+, r3\n    st x+, r4\n    ld r10, -x\n    sts 0x0110, r16\n    lds r5, 0x0100\n    push r1\n    push r2\n    push r3\n    push r4\n    pop r14\n    pop r13\n    pop r12\n    pop r11\n    ret`
     },
     example2_lab2: {
         hint: "Логические операции AND, OR, EOR, TST, SWAP, BST/BLD, а также SEI и CLI.",
         lang: "asm",
-        code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 0x0f\n    ldi r17, 0x45\n    ldi r18, 0x67\n    ldi r19, 0x89\n    ldi r20, 0x18\n    and r17, r16\n    andi r17, 0b00000010\n    or r18, r16\n    tst r16\n    eor r19, r16\n    eor r19, r19\n    mov r17, r20\n    and r17, r16\n    swap r16\n    and r18, r16\n    or r17, r18\n    bst r16, 7\n    bld r20, 2\n    sei\n    cli\n    ret`
+        code: `; Логические операции AND, OR, EOR, биты T (BST/BLD) и флаг прерываний I\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 0x0f\n    ldi r17, 0x45\n    ldi r18, 0x67\n    ldi r19, 0x89\n    ldi r20, 0x18\n    and r17, r16\n    andi r17, 0b00000010\n    or r18, r16\n    tst r16\n    eor r19, r16\n    eor r19, r19\n    mov r17, r20\n    and r17, r16\n    swap r16\n    and r18, r16\n    or r17, r18\n    bst r16, 7\n    bld r20, 2\n    sei\n    cli\n    ret`
     },
     example4_lab3: {
         hint: "Циклы, работа с тремя массивами в ОЗУ, SUBI с отрицательными константами (-3, -5).",
         lang: "asm",
-        code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\ncall pp1\nm:  jmp m\n\npp1:\n    ldi xh, 1\n    ldi yh, 1\n    ldi zh, 1\n    ldi xl, 0x00\n    ldi yl, 0x10\n    ldi zl, 0x20\n    ldi r17, 10\n    ldi r18, 20\nm1:\n    st x+, r17\n    st y+, r18\n    mov r19, r17\n    add r19, r18\n    st z+, r19\n    subi r17, -3\n    subi r18, -5\n    cpi xl, 0x10\n    brne m1\n    ret`
+        code: `; Циклическое формирование трёх массивов в ОЗУ и вычитание SUBI -3\n.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\ncall pp1\nm:  jmp m\n\npp1:\n    ldi xh, 1\n    ldi yh, 1\n    ldi zh, 1\n    ldi xl, 0x00\n    ldi yl, 0x10\n    ldi zl, 0x20\n    ldi r17, 10\n    ldi r18, 20\nm1:\n    st x+, r17\n    st y+, r18\n    mov r19, r17\n    add r19, r18\n    st z+, r19\n    subi r17, -3\n    subi r18, -5\n    cpi xl, 0x10\n    brne m1\n    ret`
     },
     test_all: {
         hint: "Проверка всех флагов SREG (I, T, H, S, V, N, Z, C), SUBI -3, NEG.", 
         lang: "asm",
-        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x08\n    out sph, r16\n    ldi r16, 0xff\n    out spl, r16\n    sec\n    clc\n    sez\n    clz\n    sen\n    cln\n    sev\n    clv\n    set\n    clt\n    seh\n    clh\n    sei\n    cli\n    nop\n    ldi r16, 0x0F\n    ldi r17, 0x01\n    add r16, r17\n    ldi r17, 10\n    subi r17, -3\n    ldi r18, 0x80\n    neg r18\n    break\nfinish:\n    rjmp finish`
+        code: `; Комплексный тест: проверка установки и сброса всех флагов SREG\n.include "m328pdef.inc"\nstart:\n    ldi r16, 0x08\n    out sph, r16\n    ldi r16, 0xff\n    out spl, r16\n    sec\n    clc\n    sez\n    clz\n    sen\n    cln\n    sev\n    clv\n    set\n    clt\n    seh\n    clh\n    sei\n    cli\n    nop\n    ldi r16, 0x0F\n    ldi r17, 0x01\n    add r16, r17\n    ldi r17, 10\n    subi r17, -3\n    ldi r18, 0x80\n    neg r18\n    break\nfinish:\n    rjmp finish`
     }
 };
 
