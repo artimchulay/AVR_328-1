@@ -28,23 +28,24 @@
 
 html, body {
     width: 100%;
-    min-height: 100%;
+    height: 100%;
     background: var(--bg-dark);
     color: var(--text-main);
     font-family: var(--font-ui);
-    touch-action: manipulation;
+    overflow-x: hidden;
 }
 
-/* ДИНАМИЧЕСКАЯ ВЫСОТА ПОД КЛАВИАТУРУ ПЛАНШЕТА */
+/* НЕПРЕРЫВНАЯ 100% ВЫСОТА ПО СТАНДАРТУ CSS ДЛЯ ПЛАНШЕТОВ */
 .app-container {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
-    min-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
     width: 100vw;
+    overflow: hidden;
 }
 
-/* 1. ШАПКА — ЖЕЛЕЗНО ПРИБИТА К ВЕРХУ ЭКРАНА */
+/* 1. ШАПКА — ЖЕСТКАЯ ФИКСАЦИЯ НАВЕРХУ */
 .toolbar {
     position: sticky;
     top: 0;
@@ -134,8 +135,11 @@ html, body {
 .btn-clear-code:hover { color: #fff; border-color: #fff; }
 .editor-status { font-size: 0.78em; color: var(--text-muted); display: flex; gap: 10px; }
 
-/* 3. РЕДАКТОР С ТОЧНЫМ НАЛОЖЕНИЕМ */
-.editor-wrapper { flex: 1; display: flex; height: 100%; min-height: 0; background: #080a0f; position: relative; overflow: hidden; }
+/* 3. РЕДАКТОР С ГАРАНТИРОВАННОЙ ВЫСОТОЙ */
+.editor-wrapper {
+    flex: 1; display: flex; height: 100%; min-height: 350px;
+    background: #080a0f; position: relative; overflow: hidden;
+}
 .line-gutter {
     width: 48px; height: 100%; padding: 10px 0; background: #06070a; border-right: 1px solid #1a1e28;
     user-select: none; overflow: hidden; flex-shrink: 0; font-family: var(--font-mono); font-size: 13px; line-height: var(--line-height);
@@ -153,7 +157,9 @@ html, body {
 .gutter-num { color: #4b5563; font-size: 0.9em; min-width: 16px; text-align: right; }
 .gutter-row.is-pc .gutter-num { color: #ffd600; font-weight: 700; }
 
-.editor-container { flex: 1; height: 100%; min-height: 0; position: relative; overflow: hidden; }
+.editor-container {
+    flex: 1; height: 100%; min-height: 350px; position: relative; overflow: hidden;
+}
 pre#highlighting, textarea#asmCode {
     box-sizing: border-box; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 13px; line-height: var(--line-height);
@@ -243,11 +249,13 @@ pre#highlighting { background: transparent; color: #e2e8f0; pointer-events: none
 .dump-view-wide::-webkit-scrollbar, .board-scroll-area::-webkit-scrollbar, .cpu-scroll-area::-webkit-scrollbar { width: 6px; height: 6px; }
 .dump-view-wide::-webkit-scrollbar-thumb, .board-scroll-area::-webkit-scrollbar-thumb, .cpu-scroll-area::-webkit-scrollbar-thumb { background: #2b3346; border-radius: 4px; }
 
+/* АДАПТАЦИЯ ПОД ПЛАНШЕТЫ С СОХРАНЕНИЕМ ВЫСОТЫ */
 @media (max-width: 950px) {
     .nav-screens { display: flex; }
-    .slider-viewport { overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; }
-    .slider-track { display: flex; width: 300%; grid-template-columns: none; padding: 6px; gap: 0; }
-    .slide-panel { flex: 0 0 33.333333%; width: 33.333333%; scroll-snap-align: start; border-radius: 0; }
+    .slider-viewport { overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; height: 100%; flex: 1; }
+    .slider-track { display: flex; width: 300%; height: 100%; grid-template-columns: none; padding: 6px; gap: 0; }
+    .slide-panel { flex: 0 0 33.333333%; width: 33.333333%; height: 100%; min-height: 0; scroll-snap-align: start; border-radius: 0; }
+    .editor-wrapper, .editor-container { height: 100%; min-height: 350px; flex: 1; }
     .toolbar { flex-direction: column; align-items: stretch; gap: 6px; }
     .toolbar-left, .toolbar-center { justify-content: space-between; }
     .select-wrapper select { max-width: 180px; }
