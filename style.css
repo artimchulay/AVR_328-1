@@ -170,7 +170,7 @@ textarea#asmCode { background: transparent !important; color: transparent !impor
 pre#highlighting { background: transparent; color: #e2e8f0; pointer-events: none; z-index: 1; overflow: hidden; }
 
 .syn-op { color: var(--syn-op); font-weight: 700; }
-.syn-com { color: var(--syn-com); font-style: italic; }
+.syn-com { color: var(--syn-com); font-style: normal; font-family: inherit; }
 .syn-lbl { color: var(--syn-lbl); font-weight: 700; }
 .syn-dir { color: var(--syn-dir); }
 .syn-num { color: var(--syn-num); }
