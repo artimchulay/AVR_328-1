@@ -1,6 +1,6 @@
 /* =========================================================
    ЯДРО ЭМУЛЯТОРА AVR ATmega328P (script.js - Монолит)
-   С поддержкой всех флагов SREG и интерактивной стрелкой PC
+   Безопасные комментарии // и ;, экранирование <>, масштабирование
    ========================================================= */
 
 /* ================= ГЛАВА 1: ПАМЯТЬ И СОСТОЯНИЕ ================= */
@@ -15,6 +15,8 @@ const IO = {
 };
 
 const IO_OFFSET = 0x20;
+
+let currentLang = 'asm'; // 'asm' или 'c'
 
 const cpu = {
     r: new Uint8Array(32),
@@ -40,15 +42,339 @@ const cpu = {
 const vButtons = [
     { id: 'K1', port: 'D', pin: 2, pressed: false },
     { id: 'K2', port: 'D', pin: 3, pressed: false },
-    { id: 'K3', port: 'B', pin: 0, pressed: false },
-    { id: 'K4', port: 'B', pin: 1, pressed: false },
-    { id: 'K5', port: 'B', pin: 2, pressed: false },
-    { id: 'K6', port: 'B', pin: 3, pressed: false },
-    { id: 'K7', port: 'B', pin: 4, pressed: false },
-    { id: 'K8', port: 'B', pin: 5, pressed: false }
+    { id: 'K3', port: 'D', pin: 4, pressed: false },
+    { id: 'K4', port: 'B', pin: 0, pressed: false },
+    { id: 'K5', port: 'B', pin: 1, pressed: false },
+    { id: 'K6', port: 'B', pin: 2, pressed: false },
+    { id: 'K7', port: 'B', pin: 3, pressed: false },
+    { id: 'K8', port: 'B', pin: 4, pressed: false }
 ];
 
-/* ================= ГЛАВА 2: КОМПИЛЯТОР И ПАРСЕР ================= */
+/* ================= ГЛАВА 2: УНИВЕРСАЛЬНЫЙ ТРАНСЛЯТОР C ================= */
+
+function stripAnyComment(line) {
+    const semi = line.indexOf(';');
+    const slash = line.indexOf('//');
+    let idx = -1;
+    if (semi !== -1 && slash !== -1) idx = Math.min(semi, slash);
+    else if (semi !== -1) idx = semi;
+    else if (slash !== -1) idx = slash;
+    return idx !== -1 ? line.substring(0, idx).trim() : line.trim();
+}
+
+function evaluateCExpression(expr) {
+    if (!expr) return 0;
+    expr = expr.trim();
+    expr = expr.replace(/\bDDD([0-7])\b/g, '$1')
+               .replace(/\bDDB([0-7])\b/g, '$1')
+               .replace(/\bDDC([0-7])\b/g, '$1')
+               .replace(/\bPORTD([0-7])\b/g, '$1')
+               .replace(/\bPORTB([0-7])\b/g, '$1')
+               .replace(/\bPORTC([0-7])\b/g, '$1')
+               .replace(/\bPIND([0-7])\b/g, '$1')
+               .replace(/\bPINB([0-7])\b/g, '$1')
+               .replace(/\bPINC([0-7])\b/g, '$1');
+
+    if (/^[0-9xXa-fA-F<>&|^~()+ \t-]+$/.test(expr)) {
+        try {
+            return Function(`'use strict'; return (${expr});`)();
+        } catch (e) {}
+    }
+    return null;
+}
+
+function compileCToAsm(cCode) {
+    const rawLines = cCode.split('\n');
+    const asmList = [];
+    let regCounter = 17;
+    const varMap = {};
+    let labelCounter = 1;
+    const controlStack = [];
+
+    asmList.push({ asm: '.include "m328pdef.inc"', lineNum: 1 });
+
+    for (let i = 0; i < rawLines.length; i++) {
+        let line = stripAnyComment(rawLines[i]);
+        const lineNum = i + 1;
+
+        if (!line || line.startsWith('#') || line.startsWith('/*') || line.includes('main(')) continue;
+
+        if (line === '}' || line.startsWith('}')) {
+            if (controlStack.length > 0) {
+                const top = controlStack.pop();
+                if (top.type === 'if') {
+                    asmList.push({ asm: `${top.lblFalse}:`, lineNum });
+                    if (top.lblEnd) asmList.push({ asm: `${top.lblEnd}:`, lineNum });
+                } else if (top.type === 'else') {
+                    asmList.push({ asm: `${top.lblEnd}:`, lineNum });
+                } else if (top.type === 'while') {
+                    asmList.push({ asm: `rjmp ${top.startLbl}`, lineNum });
+                }
+            }
+            if (line === '}') continue;
+            line = line.substring(1).trim();
+            if (!line) continue;
+        }
+
+        if (line.startsWith('else')) {
+            if (controlStack.length > 0 && controlStack[controlStack.length - 1].type === 'if') {
+                const prevIf = controlStack.pop();
+                const lblEnd = `lbl_end_${labelCounter++}`;
+                asmList.push({ asm: `rjmp ${lblEnd}`, lineNum });
+                asmList.push({ asm: `${prevIf.lblFalse}:`, lineNum });
+                controlStack.push({ type: 'else', lblEnd });
+            }
+            line = line.substring(4).trim();
+            if (!line || line === '{') continue;
+        }
+
+        if (line === '{') continue;
+
+        const declMatch = line.match(/\b(uint8_t|int8_t|uint16_t|int16_t|uint32_t|int)\s+([a-zA-Z0-9_]+)(\s*=\s*([^;]+))?;/);
+        if (declMatch) {
+            const varName = declMatch[2];
+            const initVal = declMatch[4] ? declMatch[4].trim() : "0";
+            const reg = 'r' + (regCounter++);
+            varMap[varName] = { reg };
+
+            let constVal = evaluateCExpression(initVal);
+            if (constVal !== null) {
+                if (constVal > 1000) constVal = 20;
+                asmList.push({ asm: `ldi ${reg}, ${constVal & 0xFF}`, lineNum });
+            }
+            continue;
+        }
+
+        const portOrMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC)\s*\|\=\s*([^;]+);/);
+        if (portOrMatch) {
+            const portName = portOrMatch[1];
+            const mask = evaluateCExpression(portOrMatch[2]) & 0xFF;
+            asmList.push({ asm: `in r16, ${portName}`, lineNum });
+            asmList.push({ asm: `ori r16, ${mask}`, lineNum });
+            asmList.push({ asm: `out ${portName}, r16`, lineNum });
+            continue;
+        }
+
+        const portAndNotMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC)\s*&\=\s*~\s*\(?\s*([^;]+)\)?;/);
+        if (portAndNotMatch) {
+            const portName = portAndNotMatch[1];
+            const rawExpr = portAndNotMatch[2].replace(/\)+$/, '');
+            const mask = evaluateCExpression(rawExpr) & 0xFF;
+            const invMask = (~mask) & 0xFF;
+            asmList.push({ asm: `in r16, ${portName}`, lineNum });
+            asmList.push({ asm: `andi r16, ${invMask}`, lineNum });
+            asmList.push({ asm: `out ${portName}, r16`, lineNum });
+            continue;
+        }
+
+        const portXorMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD)\s*\^\=\s*([^;]+);/);
+        if (portXorMatch) {
+            const portName = portXorMatch[1];
+            const mask = evaluateCExpression(portXorMatch[2]) & 0xFF;
+            asmList.push({ asm: `in r16, ${portName}`, lineNum });
+            asmList.push({ asm: `ldi r17, ${mask}`, lineNum });
+            asmList.push({ asm: `eor r16, r17`, lineNum });
+            asmList.push({ asm: `out ${portName}, r16`, lineNum });
+            continue;
+        }
+
+        const portAssignMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD)\s*=\s*([^;]+);/);
+        if (portAssignMatch) {
+            const portName = portAssignMatch[1];
+            const expr = portAssignMatch[2].trim();
+
+            if (expr.includes('&')) {
+                const parts = expr.split('&');
+                const vName = parts[0].trim();
+                const mask = evaluateCExpression(parts[1]) & 0xFF;
+                if (varMap[vName]) {
+                    asmList.push({ asm: `mov r16, ${varMap[vName].reg}`, lineNum });
+                    asmList.push({ asm: `andi r16, ${mask}`, lineNum });
+                    asmList.push({ asm: `out ${portName}, r16`, lineNum });
+                }
+            } else {
+                const constVal = evaluateCExpression(expr);
+                if (constVal !== null) {
+                    asmList.push({ asm: `ldi r16, ${constVal & 0xFF}`, lineNum });
+                    asmList.push({ asm: `out ${portName}, r16`, lineNum });
+                } else if (varMap[expr]) {
+                    asmList.push({ asm: `out ${portName}, ${varMap[expr].reg}`, lineNum });
+                }
+            }
+            continue;
+        }
+
+        const waitReleaseMatch = line.match(/while\s*\(\s*!\s*\(\s*(PINB|PIND)\s*&\s*\(\s*1\s*<<\s*([^)]+)\)\s*\)\s*\);/);
+        if (waitReleaseMatch) {
+            const pinPort = waitReleaseMatch[1];
+            const bit = evaluateCExpression(waitReleaseMatch[2]);
+            const waitLbl = `wait_rel_${labelCounter++}`;
+            asmList.push({ asm: `${waitLbl}:`, lineNum });
+            asmList.push({ asm: `in r16, ${pinPort}`, lineNum });
+            asmList.push({ asm: `sbrs r16, ${bit}`, lineNum });
+            asmList.push({ asm: `rjmp ${waitLbl}`, lineNum });
+            continue;
+        }
+
+        let ifBtnMatch = line.match(/if\s*\(\s*!\s*\(\s*(PINB|PIND)\s*&\s*\(\s*1\s*<<\s*([^)]+)\)\s*\)\s*\)/);
+        let pinPort = '', bit = 0;
+
+        if (ifBtnMatch) {
+            pinPort = ifBtnMatch[1];
+            bit = evaluateCExpression(ifBtnMatch[2]);
+        } else {
+            const altBtnMatch = line.match(/if\s*\(\s*\(\s*(PINB|PIND)\s*&\s*([^)]+)\)\s*==\s*0[xX]?0*\s*\)/);
+            if (altBtnMatch) {
+                pinPort = altBtnMatch[1];
+                const mask = evaluateCExpression(altBtnMatch[2]);
+                bit = Math.log2(mask) || 0;
+                ifBtnMatch = true;
+            }
+        }
+
+        if (ifBtnMatch) {
+            const lblFalse = `lbl_skip_${labelCounter++}`;
+            asmList.push({ asm: `in r16, ${pinPort}`, lineNum });
+            asmList.push({ asm: `sbrc r16, ${bit}`, lineNum });
+            asmList.push({ asm: `rjmp ${lblFalse}`, lineNum });
+            controlStack.push({ type: 'if', lblFalse });
+            continue;
+        }
+
+        if (line.startsWith('while') && line.includes('1')) {
+            const startLbl = `while_start_${labelCounter++}`;
+            asmList.push({ asm: `${startLbl}:`, lineNum });
+            controlStack.push({ type: 'while', startLbl });
+            continue;
+        }
+
+        const ifCmpMatch = line.match(/if\s*\(\s*([a-zA-Z0-9_]+)\s*==\s*([^)]+)\)/);
+        if (ifCmpMatch) {
+            const vName = ifCmpMatch[1];
+            let cmpVal = evaluateCExpression(ifCmpMatch[2]);
+            if (cmpVal > 1000) cmpVal = 20;
+            const lblFalse = `lbl_skip_${labelCounter++}`;
+            if (varMap[vName]) {
+                asmList.push({ asm: `cpi ${varMap[vName].reg}, ${cmpVal & 0xFF}`, lineNum });
+                asmList.push({ asm: `brne ${lblFalse}`, lineNum });
+                controlStack.push({ type: 'if', lblFalse });
+            }
+            continue;
+        }
+
+        const varAssignMatch = line.match(/\b([a-zA-Z0-9_]+)\s*=\s*([^;]+);/);
+        if (varAssignMatch) {
+            const vName = varAssignMatch[1];
+            if (varMap[vName]) {
+                let constVal = evaluateCExpression(varAssignMatch[2]);
+                if (constVal > 1000) constVal = 20;
+                asmList.push({ asm: `ldi ${varMap[vName].reg}, ${constVal & 0xFF}`, lineNum });
+            }
+            continue;
+        }
+
+        const addAssignMatch = line.match(/\b([a-zA-Z0-9_]+)\s*\+=\s*([a-zA-Z0-9_]+);/);
+        if (addAssignMatch) {
+            const v1 = addAssignMatch[1], v2 = addAssignMatch[2];
+            if (varMap[v1] && varMap[v2]) {
+                asmList.push({ asm: `add ${varMap[v1].reg}, ${varMap[v2].reg}`, lineNum });
+            }
+            continue;
+        }
+
+        const incMatch = line.match(/\b([a-zA-Z0-9_]+)\+\+;/);
+        if (incMatch && varMap[incMatch[1]]) {
+            asmList.push({ asm: `inc ${varMap[incMatch[1]].reg}`, lineNum });
+            continue;
+        }
+        const decMatch = line.match(/\b([a-zA-Z0-9_]+)--;/);
+        if (decMatch && varMap[decMatch[1]]) {
+            asmList.push({ asm: `dec ${varMap[decMatch[1]].reg}`, lineNum });
+            continue;
+        }
+
+        if (line.includes('_delay_')) {
+            asmList.push({ asm: `nop`, lineNum });
+            continue;
+        }
+    }
+
+    while (controlStack.length > 0) {
+        const top = controlStack.pop();
+        if (top.type === 'while') asmList.push({ asm: `rjmp ${top.startLbl}`, lineNum: rawLines.length });
+        else if (top.type === 'if') asmList.push({ asm: `${top.lblFalse}:`, lineNum: rawLines.length });
+        else if (top.type === 'else') asmList.push({ asm: `${top.lblEnd}:`, lineNum: rawLines.length });
+    }
+
+    return asmList;
+}
+
+/* ================= ГЛАВА 3: КОМПИЛЯТОР И ПАРСЕР ================= */
+
+function parseProgram(text) {
+    cpu.program = [];
+    cpu.labels = {};
+    cpu.error = null;
+
+    if (currentLang === 'c') {
+        const compiled = compileCToAsm(text);
+        let instIndex = 0;
+        for (let item of compiled) {
+            let line = item.asm.trim();
+            if (line.includes(':')) {
+                const parts = line.split(':');
+                cpu.labels[parts[0].trim().toLowerCase()] = instIndex;
+                line = parts.slice(1).join(':').trim();
+                if (!line) continue;
+            }
+            const tokens = line.split(/\s+/);
+            const op = tokens[0].toLowerCase();
+            const argsStr = line.substring(tokens[0].length).trim();
+            const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
+            cpu.program.push({ op, args, lineNum: item.lineNum, raw: line });
+            instIndex++;
+        }
+        return;
+    }
+
+    const lines = text.split('\n');
+    let instIndex = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = stripAnyComment(lines[i]);
+        if (!line) continue;
+
+        if (line.includes(':')) {
+            const parts = line.split(':');
+            cpu.labels[parts[0].trim().toLowerCase()] = instIndex;
+            line = parts.slice(1).join(':').trim();
+            if (!line) continue;
+        }
+
+        if (line.toLowerCase().startsWith('.db')) {
+            const strPart = line.substring(3).trim().replace(/['"]/g, '');
+            cpu.program.push({ type: 'DATA_DB', str: strPart, lineNum: i + 1 });
+            instIndex++;
+            continue;
+        }
+        if (line.startsWith('.')) continue;
+
+        const tokens = line.split(/\s+/);
+        const op = tokens[0].toLowerCase();
+        const argsStr = line.substring(tokens[0].length).trim();
+        const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
+
+        if (op === 'ldi' && args.length >= 1) {
+            const regNum = parseReg(args[0]);
+            if (regNum < 16) {
+                cpu.error = `Строка ${i + 1}: LDI работает только с R16..R31 (R${regNum} недопустим)`;
+            }
+        }
+
+        cpu.program.push({ op, args, lineNum: i + 1, raw: line });
+        instIndex++;
+    }
+}
 
 function parseReg(arg) {
     if (!arg) return 0;
@@ -97,54 +423,6 @@ function resolveDataRamAddr(token) {
     return parseVal(token);
 }
 
-function parseProgram(text) {
-    const lines = text.split('\n');
-    cpu.program = [];
-    cpu.labels = {};
-    cpu.error = null;
-    let instIndex = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-        let line = lines[i].trim();
-        const commentIdx = line.indexOf(';');
-        if (commentIdx !== -1) line = line.substring(0, commentIdx).trim();
-        if (!line) continue;
-
-        if (line.includes(':')) {
-            const parts = line.split(':');
-            const lbl = parts[0].trim();
-            cpu.labels[lbl.toLowerCase()] = instIndex;
-            line = parts.slice(1).join(':').trim();
-            if (!line) continue;
-        }
-
-        if (line.toLowerCase().startsWith('.db')) {
-            const strPart = line.substring(3).trim();
-            const rawStr = strPart.replace(/['"]/g, '');
-            cpu.program.push({ type: 'DATA_DB', str: rawStr, lineNum: i + 1 });
-            instIndex++;
-            continue;
-        }
-
-        if (line.startsWith('.')) continue;
-
-        const tokens = line.split(/\s+/);
-        const op = tokens[0].toLowerCase();
-        const argsStr = line.substring(tokens[0].length).trim();
-        const args = argsStr ? argsStr.split(',').map(a => a.trim()) : [];
-
-        if (op === 'ldi' && args.length >= 1) {
-            const regNum = parseReg(args[0]);
-            if (regNum < 16) {
-                cpu.error = `Строка ${i + 1}: LDI работает только с R16..R31 (R${regNum} недопустим)`;
-            }
-        }
-
-        cpu.program.push({ op, args, lineNum: i + 1, raw: line });
-        instIndex++;
-    }
-}
-
 function writeRAM(addr, val) {
     val &= 0xFF;
     if (addr >= 0 && addr < cpu.ram.length) {
@@ -178,7 +456,7 @@ function setPointerAddr(name, val) {
     else if (name.includes('z')) { cpu.r[30] = val & 0xFF; cpu.r[31] = (val >> 8) & 0xFF; }
 }
 
-/* ================= ГЛАВА 3: АЛУ И ВЫПОЛНЕНИЕ КОМАНД ================= */
+/* ================= ГЛАВА 4: АЛУ И ВЫПОЛНЕНИЕ ================= */
 
 function setFlagsAdd(a, b, res) {
     cpu.sreg.H = (((a & 0x0F) + (b & 0x0F)) > 0x0F) ? 1 : 0;
@@ -231,7 +509,6 @@ function cpuStep() {
     if (op === 'break') { haltExecution(); updateUI(); return; }
 
     switch (op) {
-        // --- Пересылка ---
         case 'ldi': { cpu.r[parseReg(a[0])] = parseVal(a[1]) & 0xFF; break; }
         case 'mov': { cpu.r[parseReg(a[0])] = cpu.r[parseReg(a[1])]; break; }
         case 'in': {
@@ -262,35 +539,6 @@ function cpuStep() {
             writeRAM(addr, cpu.r[parseReg(a[1])]);
             if (a[0].includes('+')) setPointerAddr(a[0].replace('+', ''), addr + 1); break;
         }
-        case 'ldd': {
-            const parts = a[1].toLowerCase().split('+');
-            const offset = parseVal(parts[1] || '0');
-            cpu.r[parseReg(a[0])] = readRAM(getPointerAddr(parts[0].trim()) + offset); break;
-        }
-        case 'std': {
-            const parts = a[0].toLowerCase().split('+');
-            const offset = parseVal(parts[1] || '0');
-            writeRAM(getPointerAddr(parts[0].trim()) + offset, cpu.r[parseReg(a[1])]); break;
-        }
-        case 'lpm': {
-            const dataObj = cpu.program.find(p => p.type === 'DATA_DB');
-            const targetReg = a.length > 0 ? parseReg(a[0]) : 0;
-            if (dataObj && dataObj.str) {
-                const zAddr = getPointerAddr('z');
-                cpu.r[targetReg] = dataObj.str.charCodeAt(zAddr % dataObj.str.length) || 0;
-            }
-            if (a.length > 1 && a[1].includes('+')) setPointerAddr('z', getPointerAddr('z') + 1); break;
-        }
-        case 'push': {
-            writeRAM(cpu.sp, cpu.r[parseReg(a[0])]);
-            cpu.sp = (cpu.sp - 1) & 0xFFFF; break;
-        }
-        case 'pop': {
-            cpu.sp = (cpu.sp + 1) & 0xFFFF;
-            cpu.r[parseReg(a[0])] = readRAM(cpu.sp); break;
-        }
-
-        // --- Арифметика ---
         case 'add': {
             const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
             const res = cpu.r[r1] + cpu.r[r2];
@@ -316,31 +564,6 @@ function cpuStep() {
             setFlagsSub(cpu.r[r1], k, res);
             cpu.r[r1] = res & 0xFF; break;
         }
-        case 'sbc': {
-            const r1 = parseReg(a[0]), r2 = parseReg(a[1]);
-            const res = cpu.r[r1] - cpu.r[r2] - cpu.sreg.C;
-            setFlagsSub(cpu.r[r1], cpu.r[r2] + cpu.sreg.C, res);
-            cpu.r[r1] = res & 0xFF; break;
-        }
-        case 'sbci': {
-            const r1 = parseReg(a[0]);
-            const k = parseVal(a[1]) & 0xFF;
-            const res = cpu.r[r1] - k - cpu.sreg.C;
-            setFlagsSub(cpu.r[r1], k + cpu.sreg.C, res);
-            cpu.r[r1] = res & 0xFF; break;
-        }
-        case 'mul': {
-            const res = cpu.r[parseReg(a[0])] * cpu.r[parseReg(a[1])];
-            cpu.r[0] = res & 0xFF; cpu.r[1] = (res >> 8) & 0xFF;
-            cpu.sreg.C = (res & 0x8000) ? 1 : 0; cpu.sreg.Z = (res === 0) ? 1 : 0; break;
-        }
-        case 'muls': {
-            const v1 = (cpu.r[parseReg(a[0])] & 0x80) ? cpu.r[parseReg(a[0])] - 256 : cpu.r[parseReg(a[0])];
-            const v2 = (cpu.r[parseReg(a[1])] & 0x80) ? cpu.r[parseReg(a[1])] - 256 : cpu.r[parseReg(a[1])];
-            const res = (v1 * v2) & 0xFFFF;
-            cpu.r[0] = res & 0xFF; cpu.r[1] = (res >> 8) & 0xFF;
-            cpu.sreg.C = (res & 0x8000) ? 1 : 0; cpu.sreg.Z = (res === 0) ? 1 : 0; break;
-        }
         case 'adiw': {
             let ptrName = a[0].replace('l','').replace('h','');
             let cur = getPointerAddr(ptrName);
@@ -351,18 +574,6 @@ function cpuStep() {
             cpu.sreg.Z = ((sum & 0xFFFF) === 0) ? 1 : 0;
             cpu.sreg.N = (sum & 0x8000) ? 1 : 0;
             cpu.sreg.V = (!(cur & 0x8000) && (sum & 0x8000)) ? 1 : 0;
-            cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V; break;
-        }
-        case 'sbiw': {
-            let ptrName = a[0].replace('l','').replace('h','');
-            let cur = getPointerAddr(ptrName);
-            let k = parseVal(a[1]);
-            let diff = cur - k;
-            setPointerAddr(ptrName, diff & 0xFFFF);
-            cpu.sreg.C = (cur < k) ? 1 : 0;
-            cpu.sreg.Z = ((diff & 0xFFFF) === 0) ? 1 : 0;
-            cpu.sreg.N = (diff & 0x8000) ? 1 : 0;
-            cpu.sreg.V = ((cur & 0x8000) && !(diff & 0x8000)) ? 1 : 0;
             cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V; break;
         }
         case 'inc': {
@@ -397,12 +608,6 @@ function cpuStep() {
             cpu.sreg.S = cpu.sreg.N ^ cpu.sreg.V;
             cpu.r[reg] = res; break;
         }
-        case 'com': {
-            const reg = parseReg(a[0]);
-            const res = (~cpu.r[reg]) & 0xFF;
-            cpu.sreg.C = 1; setFlagsLogic(res);
-            cpu.r[reg] = res; break;
-        }
         case 'and': {
             const reg = parseReg(a[0]);
             cpu.r[reg] &= cpu.r[parseReg(a[1])];
@@ -433,49 +638,6 @@ function cpuStep() {
             cpu.r[reg] = 0; setFlagsLogic(0); break;
         }
         case 'ser': { cpu.r[parseReg(a[0])] = 0xFF; break; }
-        case 'tst': { setFlagsLogic(cpu.r[parseReg(a[0])]); break; }
-        case 'swap': {
-            const reg = parseReg(a[0]);
-            const v = cpu.r[reg];
-            cpu.r[reg] = ((v & 0x0F) << 4) | ((v & 0xF0) >> 4); break;
-        }
-
-        // --- Сдвиги ---
-        case 'lsl': {
-            const reg = parseReg(a[0]);
-            const cOut = (cpu.r[reg] & 0x80) !== 0;
-            cpu.r[reg] = (cpu.r[reg] << 1) & 0xFF;
-            setFlagsShift(cpu.r[reg], cOut); break;
-        }
-        case 'lsr': {
-            const reg = parseReg(a[0]);
-            const cOut = (cpu.r[reg] & 0x01) !== 0;
-            cpu.r[reg] = (cpu.r[reg] >> 1) & 0xFF;
-            setFlagsShift(cpu.r[reg], cOut); break;
-        }
-        case 'asr': {
-            const reg = parseReg(a[0]);
-            const cOut = (cpu.r[reg] & 0x01) !== 0;
-            const msb = cpu.r[reg] & 0x80;
-            cpu.r[reg] = (cpu.r[reg] >> 1) | msb;
-            setFlagsShift(cpu.r[reg], cOut); break;
-        }
-        case 'rol': {
-            const reg = parseReg(a[0]);
-            const oldC = cpu.sreg.C;
-            const cOut = (cpu.r[reg] & 0x80) !== 0;
-            cpu.r[reg] = ((cpu.r[reg] << 1) & 0xFF) | oldC;
-            setFlagsShift(cpu.r[reg], cOut); break;
-        }
-        case 'ror': {
-            const reg = parseReg(a[0]);
-            const oldC = cpu.sreg.C;
-            const cOut = (cpu.r[reg] & 0x01) !== 0;
-            cpu.r[reg] = (cpu.r[reg] >> 1) | (oldC << 7);
-            setFlagsShift(cpu.r[reg], cOut); break;
-        }
-
-        // --- Флаги и бит-операции ---
         case 'sbi': {
             const addr = resolveIoRamAddr(a[0]);
             writeRAM(addr, readRAM(addr) | (1 << parseVal(a[1]))); break;
@@ -484,54 +646,18 @@ function cpuStep() {
             const addr = resolveIoRamAddr(a[0]);
             writeRAM(addr, readRAM(addr) & ~(1 << parseVal(a[1]))); break;
         }
-        case 'bst': { cpu.sreg.T = (cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) ? 1 : 0; break; }
-        case 'bld': {
-            const reg = parseReg(a[0]);
-            const bit = parseVal(a[1]);
-            if (cpu.sreg.T) cpu.r[reg] |= (1 << bit);
-            else cpu.r[reg] &= ~(1 << bit); break;
-        }
-        case 'sec': { cpu.sreg.C = 1; break; }
-        case 'clc': { cpu.sreg.C = 0; break; }
-        case 'sez': { cpu.sreg.Z = 1; break; }
-        case 'clz': { cpu.sreg.Z = 0; break; }
-        case 'sen': { cpu.sreg.N = 1; break; }
-        case 'cln': { cpu.sreg.N = 0; break; }
-        case 'sev': { cpu.sreg.V = 1; break; }
-        case 'clv': { cpu.sreg.V = 0; break; }
-        case 'set': { cpu.sreg.T = 1; break; }
-        case 'clt': { cpu.sreg.T = 0; break; }
-        case 'seh': { cpu.sreg.H = 1; break; }
-        case 'clh': { cpu.sreg.H = 0; break; }
-        case 'sei': { cpu.sreg.I = 1; break; }
-        case 'cli': { cpu.sreg.I = 0; break; }
-        case 'nop': { break; }
-
-        case 'cp': {
-            setFlagsSub(cpu.r[parseReg(a[0])], cpu.r[parseReg(a[1])], cpu.r[parseReg(a[0])] - cpu.r[parseReg(a[1])]); break;
-        }
         case 'cpi': {
             const k = parseVal(a[1]) & 0xFF;
             setFlagsSub(cpu.r[parseReg(a[0])], k, cpu.r[parseReg(a[0])] - k); break;
         }
-        case 'cpc': {
-            const k = cpu.r[parseReg(a[1])];
-            const res = cpu.r[parseReg(a[0])] - k - cpu.sreg.C;
-            const prevZ = cpu.sreg.Z;
-            setFlagsSub(cpu.r[parseReg(a[0])], k + cpu.sreg.C, res);
-            cpu.sreg.Z = (prevZ === 1 && (res & 0xFF) === 0) ? 1 : 0; break;
+        case 'cp': {
+            setFlagsSub(cpu.r[parseReg(a[0])], cpu.r[parseReg(a[1])], cpu.r[parseReg(a[0])] - cpu.r[parseReg(a[1])]); break;
         }
-
-        // --- Ветвления ---
-        case 'sbrs': { if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) !== 0) nextPC++; break; }
-        case 'sbrc': { if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) === 0) nextPC++; break; }
-        case 'sbis': {
-            const addr = resolveIoRamAddr(a[0]);
-            if ((readRAM(addr) & (1 << parseVal(a[1]))) !== 0) nextPC++; break;
+        case 'sbrs': {
+            if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) !== 0) nextPC++; break;
         }
-        case 'sbic': {
-            const addr = resolveIoRamAddr(a[0]);
-            if ((readRAM(addr) & (1 << parseVal(a[1]))) === 0) nextPC++; break;
+        case 'sbrc': {
+            if ((cpu.r[parseReg(a[0])] & (1 << parseVal(a[1]))) === 0) nextPC++; break;
         }
         case 'jmp':
         case 'rjmp': { if (cpu.labels[a[0].toLowerCase()] !== undefined) nextPC = cpu.labels[a[0].toLowerCase()]; break; }
@@ -541,44 +667,15 @@ function cpuStep() {
         case 'brlo': { if (cpu.sreg.C === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
         case 'brcc':
         case 'brsh': { if (cpu.sreg.C === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brlt': { if (cpu.sreg.S === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brge': { if (cpu.sreg.S === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brmi': { if (cpu.sreg.N === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brpl': { if (cpu.sreg.N === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brts': { if (cpu.sreg.T === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brtc': { if (cpu.sreg.T === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brvs': { if (cpu.sreg.V === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brvc': { if (cpu.sreg.V === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brhs': { if (cpu.sreg.H === 1) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-        case 'brhc': { if (cpu.sreg.H === 0) nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break; }
-
-        case 'call': {
-            writeRAM(cpu.sp, (nextPC >> 8) & 0xFF);
-            cpu.sp = (cpu.sp - 1) & 0xFFFF;
-            writeRAM(cpu.sp, nextPC & 0xFF);
-            cpu.sp = (cpu.sp - 1) & 0xFFFF;
-            nextPC = cpu.labels[a[0].toLowerCase()] ?? nextPC; break;
-        }
-        case 'ret': {
-            cpu.sp = (cpu.sp + 1) & 0xFFFF;
-            const low = readRAM(cpu.sp);
-            cpu.sp = (cpu.sp + 1) & 0xFFFF;
-            const high = readRAM(cpu.sp);
-            nextPC = (high << 8) | low; break;
-        }
-        case 'reti': {
-            cpu.sreg.I = 1;
-            cpu.sp = (cpu.sp + 1) & 0xFFFF;
-            const low = readRAM(cpu.sp);
-            cpu.sp = (cpu.sp + 1) & 0xFFFF;
-            const high = readRAM(cpu.sp);
-            nextPC = (high << 8) | low; break;
-        }
+        case 'sec': { cpu.sreg.C = 1; break; }
+        case 'clc': { cpu.sreg.C = 0; break; }
+        case 'sez': { cpu.sreg.Z = 1; break; }
+        case 'clz': { cpu.sreg.Z = 0; break; }
+        case 'nop': { break; }
     }
 
     cpu.pc = nextPC;
     cpu.cycles++;
-
     syncHardwareState();
     updateUI();
 
@@ -590,7 +687,7 @@ function cpuStep() {
     }
 }
 
-/* ================= ГЛАВА 4: ЖЕЛЕЗО И ПЛАТА ================= */
+/* ================= ГЛАВА 5: ЖЕЛЕЗО И ПЛАТА ================= */
 
 function toggleVButton(id) {
     const btn = vButtons.find(b => b.id === id);
@@ -626,9 +723,7 @@ function syncHardwareState() {
     flags.forEach((f, idx) => { if (cpu.sreg[f]) sregByte |= (1 << idx); });
     cpu.ram[IO.SREG] = sregByte;
 
-    for (let i = 0; i < 32; i++) {
-        cpu.ram[i] = cpu.r[i];
-    }
+    for (let i = 0; i < 32; i++) cpu.ram[i] = cpu.r[i];
 }
 
 function selectLedPort(portLetter) {
@@ -669,7 +764,7 @@ function renderHardware() {
 
 function clearUart() { cpu.uartLog = ""; renderHardware(); }
 
-/* ================= ГЛАВА 5: ИГРОВОЙ ЦИКЛ ================= */
+/* ================= ГЛАВА 6: ИГРОВОЙ ЦИКЛ ================= */
 
 function haltExecution() {
     cpu.running = false; clearTimeout(cpu.timer);
@@ -726,7 +821,7 @@ function updateSpeed(val) {
     document.getElementById('speedVal').textContent = cpu.speed + ' оп/с';
 }
 
-/* ================= ГЛАВА 6: ОТРИСОВКА ИНТЕРФЕЙСА И ПАМЯТИ ================= */
+/* ================= ГЛАВА 7: ДАМП ПАМЯТИ ================= */
 
 function setMemView(view) {
     cpu.memView = view;
@@ -801,30 +896,42 @@ function updateUI() {
     renderGutter();
 }
 
-/* ================= ГЛАВА 7: РЕДАКТОР, ПОДСВЕТКА И ПЕРЕНОС PC ================= */
+/* ================= ГЛАВА 8: БЕЗОПАСНАЯ ПОДСВЕТКА И ПЕРЕНОС PC ================= */
 
-const KNOWN_OPS = new Set([
-    'ldi','mov','add','adc','sub','subi','sbc','sbci','mul','muls','adiw','sbiw',
-    'inc','dec','neg','com','and','andi','or','ori','eor','clr','ser','cpi','cp',
-    'cpc','tst','swap','ror','rol','lsl','lsr','asr','sbi','cbi','bst','bld','sbrs',
-    'sbrc','sbis','sbic','sec','clc','sez','clz','sen','cln','sev','clv','set','clt',
-    'seh','clh','sei','cli','st','std','ld','ldd','lpm','sts','lds','push','pop',
-    'jmp','rjmp','breq','brne','brcs','brcc','brlo','brsh','brlt','brge','brmi',
-    'brpl','brts','brtc','brvs','brvc','brhs','brhc','call','ret','reti','in','out','break','nop'
-]);
+function escapeHtml(text) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 function highlightCode(rawText) {
-    return rawText.split('\n').map(line => {
-        let comment = '', codePart = line, commentIdx = line.indexOf(';');
-        if (commentIdx !== -1) { codePart = line.substring(0, commentIdx); comment = line.substring(commentIdx); }
+    if (currentLang === 'c') {
+        return rawText.split('\n').map(line => {
+            const raw = stripAnyComment(line);
+            const comment = line.substring(raw.length);
 
-        let processed = codePart
+            let p = escapeHtml(raw)
+                .replace(/\b(uint8_t|int8_t|uint16_t|int16_t|uint32_t|int|void)\b/g, '<span class="syn-type">$1</span>')
+                .replace(/\b(while|for|if|else|return|break)\b/g, '<span class="syn-kw">$1</span>')
+                .replace(/(#define|#include)/g, '<span class="syn-dir">$1</span>')
+                .replace(/\b(DDR[BCD]|PORT[BCD]|PIN[BCD]|UDR0)\b/g, '<span class="syn-op">$1</span>')
+                .replace(/\b(\$[0-9a-fA-F]+|0x[0-9a-fA-F]+|0b[01]+|-?\d+)\b/g, '<span class="syn-num">$1</span>');
+
+            return p + (comment ? `<span class="syn-com">${escapeHtml(comment)}</span>` : '');
+        }).join('\n');
+    }
+
+    const KNOWN_OPS = new Set(['ldi','mov','add','adc','sub','subi','sbc','sbci','mul','muls','adiw','sbiw','inc','dec','neg','com','and','andi','or','ori','eor','clr','ser','cpi','cp','cpc','tst','swap','ror','rol','lsl','lsr','asr','sbi','cbi','bst','bld','sbrs','sbrc','sbis','sbic','sec','clc','sez','clz','sen','cln','sev','clv','set','clt','seh','clh','sei','cli','st','std','ld','ldd','lpm','sts','lds','push','pop','jmp','rjmp','breq','brne','brcs','brcc','brlo','brsh','brlt','brge','brmi','brpl','brts','brtc','brvs','brvc','brhs','brhc','call','ret','reti','in','out','break','nop']);
+
+    return rawText.split('\n').map(line => {
+        const raw = stripAnyComment(line);
+        const comment = line.substring(raw.length);
+
+        let p = escapeHtml(raw)
             .replace(/^(\s*)([a-zA-Z0-9_]+:)/g, '$1<span class="syn-lbl">$2</span>')
             .replace(/(\.[a-zA-Z0-9_]+)/g, '<span class="syn-dir">$1</span>')
             .replace(/\b(\$[0-9a-fA-F]+|0x[0-9a-fA-F]+|0b[01]+|-?\d+)\b/g, '<span class="syn-num">$1</span>');
 
-        processed = processed.replace(/\b([a-zA-Z]+)\b/g, (m) => KNOWN_OPS.has(m.toLowerCase()) ? `<span class="syn-op">${m}</span>` : m);
-        return processed + (comment ? `<span class="syn-com">${comment.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</span>` : '');
+        p = p.replace(/\b([a-zA-Z]+)\b/g, (m) => KNOWN_OPS.has(m.toLowerCase()) ? `<span class="syn-op">${m}</span>` : m);
+        return p + (comment ? `<span class="syn-com">${escapeHtml(comment)}</span>` : '');
     }).join('\n');
 }
 
@@ -834,13 +941,21 @@ function updateSyntax() {
     renderGutter();
 }
 
+function setEditorLang(lang) {
+    currentLang = lang;
+    document.getElementById('btnLangAsm').classList.toggle('active', lang === 'asm');
+    document.getElementById('btnLangC').classList.toggle('active', lang === 'c');
+    document.getElementById('editorTitle').textContent = lang === 'c' ? '⚡ Редактор (C / Си)' : '📝 Редактор (.asm)';
+    updateSyntax();
+    cpuReset();
+}
+
 function toggleBreakpoint(lineNum) {
     if (cpu.breakpoints.has(lineNum)) cpu.breakpoints.delete(lineNum);
     else cpu.breakpoints.add(lineNum);
     updateSyntax();
 }
 
-// ПЕРЕМЕЩЕНИЕ СТРЕЛКИ PC НА НУЖНУЮ СТРОКУ (Set Next Statement)
 function setPcToLine(targetLine) {
     if (cpu.program.length === 0) parseProgram(document.getElementById('asmCode').value);
     if (cpu.program.length === 0) return;
@@ -848,7 +963,6 @@ function setPcToLine(targetLine) {
     haltExecution();
 
     let targetIdx = -1;
-    // Находим первую валидную инструкцию на этой или следующей строке
     for (let i = 0; i < cpu.program.length; i++) {
         if (cpu.program[i].lineNum >= targetLine) {
             targetIdx = i;
@@ -861,19 +975,9 @@ function setPcToLine(targetLine) {
     updateUI();
 }
 
-// Drag & Drop обработчики
-function onPcDragStart(e) {
-    e.dataTransfer.setData('text/plain', 'pc');
-    e.dataTransfer.effectAllowed = 'move';
-}
-function onGutterDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-}
-function onGutterDrop(e, lineNum) {
-    e.preventDefault();
-    setPcToLine(lineNum);
-}
+function onPcDragStart(e) { e.dataTransfer.setData('text/plain', 'pc'); e.dataTransfer.effectAllowed = 'move'; }
+function onGutterDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+function onGutterDrop(e, lineNum) { e.preventDefault(); setPcToLine(lineNum); }
 
 function renderGutter() {
     const code = document.getElementById('asmCode').value;
@@ -890,7 +994,7 @@ function renderGutter() {
                       ondblclick="setPcToLine(${i})"
                       ondragover="onGutterDragOver(event)"
                       ondrop="onGutterDrop(event, ${i})"
-                      title="Клик: точка останова | Двойной клик (или перетащить ▶): переместить стрелку выполнения сюда">
+                      title="Клик: точка останова | Двойной клик (или перетащить ▶): переместить стрелку сюда">
                     <span class="bp-marker"></span>
                     <span class="pc-arrow" ${isCurrentPC ? 'draggable="true" ondragstart="onPcDragStart(event)" style="cursor: grab;"' : ''}>▶</span>
                     <span class="gutter-num">${i}</span>
@@ -913,59 +1017,89 @@ function scrollToSlide(index) {
     document.querySelectorAll('.nav-screen-btn').forEach((b, i) => b.classList.toggle('active', i === index));
 }
 
-/* ================= ГЛАВА 8: ПОЛНЫЙ НАБОР ПРИМЕРОВ ================= */
+/* ================= ГЛАВА 9: ПРИМЕРЫ ПРОГРАММ ================= */
 
 const PROGRAMS = {
-    empty: { hint: "", code: `.include "m328pdef.inc"\n\nstart:\n    \n` },
+    empty: { hint: "", lang: "c", code: `#include <avr/io.h>\n\nint main(void)\n{\n    \n    while (1)\n    {\n        \n    }\n}` },
+
+    c_zadanie5: {
+        hint: "Нажатие кнопок K1 (PD2), K2 (PD3), K3 (PD4) переключает соответствующие светодиоды в режиме триггера.",
+        lang: "c",
+        code: `#define F_CPU 16000000UL\n#include <avr/io.h>\n#include <util/delay.h>\n\nint main(void)\n{\n    // Линии светодиодов на вывод:\n    DDRD |= (1 << DDD0) | (1 << DDD1); // PD0 (RX) и PD1 (TX)\n    DDRB |= (1 << DDB5);               // PB5 (светодиод L)\n\n    PORTD &= ~((1 << PORTD0) | (1 << PORTD1));\n    PORTB &= ~(1 << PORTB5);\n\n    // Линии кнопок на вход с подтяжкой:\n    DDRD &= ~((1 << DDD2) | (1 << DDD3) | (1 << DDD4));\n    PORTD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4);\n\n    while (1)\n    {\n        // Кнопка K1 (PD2) переключает светодиод RX (PD0)\n        if (!(PIND & (1 << PIND2)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND2)))\n            {\n                PORTD ^= (1 << PORTD0);\n                while (!(PIND & (1 << PIND2)));\n                _delay_ms(40);\n            }\n        }\n\n        // Кнопка K2 (PD3) переключает светодиод TX (PD1)\n        if (!(PIND & (1 << PIND3)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND3)))\n            {\n                PORTD ^= (1 << PORTD1);\n                while (!(PIND & (1 << PIND3)));\n                _delay_ms(40);\n            }\n        }\n\n        // Кнопка K3 (PD4) переключает светодиод L (PB5)\n        if (!(PIND & (1 << PIND4)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND4)))\n            {\n                PORTB ^= (1 << PORTB5);\n                while (!(PIND & (1 << PIND4)));\n                _delay_ms(40);\n            }\n        }\n    }\n}`
+    },
+
+    c_zadanie2: {
+        hint: "Маятниковое переключение: биты PD6 и PD7 активны, остальные занулены маской 0xC0.",
+        lang: "c",
+        code: `#define F_CPU 16000000UL\n#include <avr/io.h>\n#include <util/delay.h>\n\nint main(void)\n{\n    DDRD = (1 << DDD6) | (1 << DDD7);\n    uint8_t count = 0;\n    int8_t step = 1;\n\n    while (1)\n    {\n        PORTD = count & 0xC0;\n        if (count == 255)\n        {\n            step = -1;\n        }\n        else if (count == 0)\n        {\n            step = 1;\n        }\n        count += step;\n        _delay_us(10);\n    }\n}`
+    },
+
+    c_example2: {
+        hint: "Мигание светодиодом L (PB5) через счётчик x.",
+        lang: "c",
+        code: `#include <avr/io.h>\n\nuint32_t x = 0;\nint flag = 0;\n\nint main(void)\n{\n    DDRB = 0x20;\n    while (1)\n    {\n        if (x == 800000)\n        {\n            if (flag == 0)\n            {\n                PORTB = 0x20; flag = 1;\n            }\n            else\n            {\n                PORTB = 0x00; flag = 0;\n            }\n            x = 0;\n        }\n        x++;\n    }\n}`
+    },
+
+    c_example3: {
+        hint: "Нажатие кнопки K4 (PB0) включает светодиод L (PB5).",
+        lang: "c",
+        code: `#include <avr/io.h>\n\nint main(void)\n{\n    DDRB = 0x20;\n    PORTB |= 0x01;\n    while (1)\n    {\n        if ((PINB & 0x01) == 0)\n            PORTB |= 0x20;\n        else\n            PORTB &= ~0x20;\n    }\n}`
+    },
+
     sort_ram: { 
         hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и <b>сортирует их по возрастанию</b>.", 
-        code: `.include "m328pdef.inc"\n\nldi r16, 0x16\nsts 0x0100, r16\nldi r16, 0x03\nsts 0x0101, r16\nldi r16, 0x25\nsts 0x0102, r16\nldi r16, 0x45\nsts 0x0103, r16\nldi r16, 0x01\nsts 0x0104, r16\n\nldi r20, 4\nout_1:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r21, 4\n\nin_1:\n    ld r16, x+\n    ld r17, x\n    cp r16, r17\n    brlo no_s\n\n    st x, r16\n    st -x, r17\n    adiw xl, 1\n\nno_s:\n    dec r21\n    brne in_1\n    dec r20\n    brne out_1\n\nfinish:\n    break\n    rjmp finish` 
+        lang: "asm",
+        code: `.include "m328pdef.inc"\n\nldi r16, 0x16\nsts 0x0100, r16\nldi r16, 0x03\nsts 0x0101, r16\nldi r16, 0x25\nsts 0x0102, r16\nldi r16, 0x45\nsts 0x0103, r16\nldi r16, 0x01\nsts 0x0104, r16\n\nldi r20, 5\nout_1:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r21, 4\n\nin_1:\n    ld r16, x+\n    ld r17, x\n    cp r16, r17\n    brlo no_s\n\n    st x, r16\n    st -x, r17\n    adiw xl, 1\n\nno_s:\n    dec r21\n    brne in_1\n    dec r20\n    brne out_1\n\nfinish:\n    break\n    rjmp finish` 
+    },
+    button_led: { 
+        hint: "Нажмите кнопку <b>K1 (PD2)</b> — светодиод <b>L (PB5)</b> загорится.", 
+        lang: "asm",
+        code: `.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` 
     },
     btn_counter: { 
-        hint: "Нажмите кнопку <b>K3 (PB0)</b> (+1) или <b>K4 (PB1)</b> (-1). Порт D покажет результат!", 
+        hint: "Нажмите кнопку <b>K4 (PB0)</b> (+1) или <b>K5 (PB1)</b> (-1). Порт D покажет результат!", 
+        lang: "asm",
         code: `.include "m328pdef.inc"\nstart:\n    ser r16\n    out DDRD, r16\n    cbi DDRB, 0\n    cbi DDRB, 1\n    sbi PORTB, 0\n    sbi PORTB, 1\n    clr r0\nloop:\n    out PORTD, r0\n    in r17, PINB\n    sbrs r17, 0\n    inc r0\n    sbrs r17, 1\n    dec r0\n    rjmp loop` 
     },
     led_blink: { 
         hint: "Автоматический счётчик от 0 до 255 на Порту D.", 
+        lang: "asm",
         code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0xFF\n    out DDRD, r16\n    ldi r17, 0x00\nloop:\n    out PORTD, r17\n    inc r17\n    rjmp loop` 
-    },
-    button_led: { 
-        hint: "Нажмите кнопку <b>K1</b> — светодиод <b>L (PB5)</b> загорится.", 
-        code: `.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` 
     },
     fibonacci: { 
         hint: "Нажмите <b>«Пуск»</b>: ячейки памяти заполнятся числами Фибоначчи!", 
+        lang: "asm",
         code: `.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` 
     },
     uart_tx: { 
         hint: "Отправка текста в виртуальный монитор UART.", 
+        lang: "asm",
         code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x48\n    out UDR0, r16\n    ldi r16, 0x69\n    out UDR0, r16\n    ldi r16, 0x21\n    out UDR0, r16\nstop:\n    break` 
     },
     alu_flags: { 
         hint: "Арифметика: наблюдайте за флагами SREG при переполнении и нуле.", 
+        lang: "asm",
         code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 250\n    ldi r17, 10\n    add r16, r17\n    ldi r18, 5\n    subi r18, 5\n    sec\n    clz\n    break` 
     },
-
-    test_all: {
-        hint: "<b>Комплексный тест</b>: проверка всех флагов SREG (I, T, H, S, V, N, Z, C), SUBI -3, NEG и сдвигов.",
-        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x08\n    out sph, r16\n    ldi r16, 0xff\n    out spl, r16\n\n    ; 1. Проверка установки и очистки ВСЕХ флагов\n    sec\n    clc\n    sez\n    clz\n    sen\n    cln\n    sev\n    clv\n    set\n    clt\n    seh\n    clh\n    sei\n    cli\n    nop\n\n    ; 2. Проверка полупереноса H при сложении (0x0F + 1 -> H=1)\n    ldi r16, 0x0F\n    ldi r17, 0x01\n    add r16, r17\n\n    ; 3. Проверка SUBI с отрицательным числом (ЛР 3)\n    ldi r17, 10\n    subi r17, -3 ; r17 = 13 (0x0D), C = 1\n\n    ; 4. Проверка знакового переполнения в NEG (для -128 / 0x80 -> V=1)\n    ldi r18, 0x80\n    neg r18\n\n    ; 5. Проверка сдвигов и V = N xor C\n    ldi r19, 0x80\n    lsl r19\n\n    break\nfinish:\n    rjmp finish`
-    },
-
     example1_lab1: {
-        hint: "<b>ЛР 1 (Example 1)</b>: Инициализация стека, пересылка данных, косвенная адресация X и стек (PUSH/POP).",
+        hint: "Инициализация стека, пересылка данных, косвенная адресация X и стек (PUSH/POP).",
+        lang: "asm",
         code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 10\n    ldi r17, 0x10\n    ldi r18, 0x20\n    ldi r19, 0x30\n    mov r1, r16\n    mov r2, r17\n    mov r3, r18\n    mov r4, r18\n    in r4, portd\n    ldi xh, 0x01\n    ldi xl, 0\n    st x+, r1\n    st x+, r2\n    st x+, r3\n    st x+, r4\n    ld r10, -x\n    sts 0x0110, r16\n    lds r5, 0x0100\n    push r1\n    push r2\n    push r3\n    push r4\n    pop r14\n    pop r13\n    pop r12\n    pop r11\n    ret`
     },
     example2_lab2: {
-        hint: "<b>ЛР 2 (Example 2.1)</b>: Логические операции AND, OR, EOR, TST, SWAP, BST/BLD, а также SEI и CLI.",
+        hint: "Логические операции AND, OR, EOR, TST, SWAP, BST/BLD, а также SEI и CLI.",
+        lang: "asm",
         code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\nm:  call pp1\n    jmp m\n\npp1:\n    ldi r16, 0x0f\n    ldi r17, 0x45\n    ldi r18, 0x67\n    ldi r19, 0x89\n    ldi r20, 0x18\n    and r17, r16\n    andi r17, 0b00000010\n    or r18, r16\n    tst r16\n    eor r19, r16\n    eor r19, r19\n    mov r17, r20\n    and r17, r16\n    swap r16\n    and r18, r16\n    or r17, r18\n    bst r16, 7\n    bld r20, 2\n    sei\n    cli\n    ret`
     },
     example4_lab3: {
-        hint: "<b>ЛР 3 (Example 4)</b>: Циклы, работа с тремя массивами в ОЗУ, SUBI с отрицательными константами (-3, -5).",
+        hint: "Циклы, работа с тремя массивами в ОЗУ, SUBI с отрицательными константами (-3, -5).",
+        lang: "asm",
         code: `.include "m328pdef.inc"\n\nldi r16, 0x08\nout sph, r16\nldi r16, 0xff\nout spl, r16\n\ncall pp1\nm:  jmp m\n\npp1:\n    ldi xh, 1\n    ldi yh, 1\n    ldi zh, 1\n    ldi xl, 0x00\n    ldi yl, 0x10\n    ldi zl, 0x20\n    ldi r17, 10\n    ldi r18, 20\nm1:\n    st x+, r17\n    st y+, r18\n    mov r19, r17\n    add r19, r18\n    st z+, r19\n    subi r17, -3\n    subi r18, -5\n    cpi xl, 0x10\n    brne m1\n    ret`
     },
-    button_led_lab4: {
-        hint: "<b>ЛР 4 (Пример 3)</b>: Опрос кнопки с подтяжкой PULL-UP (PB0) и включение светодиода L (PB5).",
-        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x20\n    out DDRB, r16\n    ldi r16, 0x01\n    out PORTB, r16\nloop:\n    in r17, PINB\n    bst r17, 0\n    brts led_off\n    brtc led_on\n    rjmp loop\nled_on:\n    sbi PORTB, 5\n    rjmp loop\nled_off:\n    cbi PORTB, 5\n    rjmp loop`
+    test_all: {
+        hint: "Проверка всех флагов SREG (I, T, H, S, V, N, Z, C), SUBI -3, NEG.", 
+        lang: "asm",
+        code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0x08\n    out sph, r16\n    ldi r16, 0xff\n    out spl, r16\n    sec\n    clc\n    sez\n    clz\n    sen\n    cln\n    sev\n    clv\n    set\n    clt\n    seh\n    clh\n    sei\n    cli\n    nop\n    ldi r16, 0x0F\n    ldi r17, 0x01\n    add r16, r17\n    ldi r17, 10\n    subi r17, -3\n    ldi r18, 0x80\n    neg r18\n    break\nfinish:\n    rjmp finish`
     }
 };
 
@@ -976,7 +1110,7 @@ function loadSelectedExample() {
         document.getElementById('asmCode').value = PROGRAMS[key].code;
         if (key === 'empty' || !PROGRAMS[key].hint) banner.style.display = 'none';
         else { banner.style.display = 'flex'; document.getElementById('hintText').innerHTML = PROGRAMS[key].hint; }
-        updateSyntax(); cpuReset();
+        setEditorLang(PROGRAMS[key].lang || 'asm');
     }
 }
 
