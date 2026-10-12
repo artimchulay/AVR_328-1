@@ -2,31 +2,37 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- СВОБОДНЫЙ ЗУМ: ПРИБЛИЖЕНИЕ ДО 3X И ОТДАЛЕНИЕ ДО 0.5X -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=3.0, user-scalable=yes">
     <title>AVR ATmega328P Web Simulator</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="app-container">
-        <!-- ВЕРХНЯЯ СТРОКА УПРАВЛЕНИЯ -->
+        <!-- ВЕРХНЯЯ СТРОКА УПРАВЛЕНИЯ (НАМЕРТВО ПРИКРЕПЛЕНА К ВЕРХУ) -->
         <header class="toolbar">
             <div class="toolbar-left">
                 <div class="logo">⚡ <span>AVR Studio</span></div>
                 <div class="select-wrapper">
                     <select id="exampleSelector" onchange="loadSelectedExample()">
                         <option value="empty">📄 Новый чистый файл</option>
-                        <option value="sort_ram" selected>Сортировка массива в ОЗУ (0x0100)</option>
-                        <option value="btn_counter">Счётчик по кнопкам (K3: +1, K4: -1)</option>
-                        <option value="led_blink">Бегущий огонёк (Порт D)</option>
-                        <option value="button_led">Кнопка включает светодиод L</option>
-                        <option value="fibonacci">Числа Фибоначчи в памяти</option>
-                        <option value="uart_tx">Отправка текста в терминал (UART)</option>
-                        <option value="alu_flags">Арифметика и флаги переполнения</option>
-                        <option value="test_all">⚡ Комплексный тест: все новые команды и флаги</option>
-                        <option value="example1_lab1">Пересылка данных и Стек </option>
-                        <option value="example2_lab2">Логика, BST/BLD, SEI/CLI </option>
-                        <option value="example4_lab3">Массивы и SUBI -3 </option>
-                        <option value="button_led_lab4">Кнопка PB0 и светодиод PB5</option>
+                        <!-- Программы на Си -->
+                        <option value="c_zadanie5">⚡ Си: Кнопки-переключатели светодиодов (PD2..PD4)</option>
+                        <option value="c_zadanie2">⚡ Си: Бегущий маятник (PD6, PD7)</option>
+                        <option value="c_example2">⚡ Си: Мигающий светодиод L через счётчик</option>
+                        <option value="c_example3">⚡ Си: Кнопка включает светодиод L</option>
+                        <!-- Программы на Ассемблере -->
+                        <option value="sort_ram" selected>📝 Сортировка массива в ОЗУ (0x0100)</option>
+                        <option value="button_led">📝 Кнопка включает светодиод L (PB5)</option>
+                        <option value="btn_counter">📝 Счётчик по кнопкам (K4: +1, K5: -1)</option>
+                        <option value="led_blink">📝 Бегущий огонёк (Порт D)</option>
+                        <option value="fibonacci">📝 Числа Фибоначчи в памяти</option>
+                        <option value="uart_tx">📝 Отправка текста в терминал (UART)</option>
+                        <option value="example1_lab1">📝 Пересылка данных и стек (PUSH / POP)</option>
+                        <option value="example2_lab2">📝 Логические операции и флаги</option>
+                        <option value="example4_lab3">📝 Заполнение трёх массивов в ОЗУ</option>
+                        <option value="alu_flags">📝 Арифметика и флаги переполнения</option>
+                        <option value="test_all">📝 Комплексный тест: все команды и флаги SREG</option>
                     </select>
                 </div>
             </div>
@@ -69,8 +75,12 @@
                 <section class="slide-panel editor-slide">
                     <div class="slide-header">
                         <div style="display:flex; align-items:center; gap:8px;">
-                            <h2>📝 Редактор ассемблера (.asm)</h2>
-                            <button type="button" class="btn-clear-code" onclick="clearEditor()" title="Очистить код">🗑️ Очистить</button>
+                            <h2 id="editorTitle">📝 Редактор кода</h2>
+                            <div class="lang-switch-btns">
+                                <button type="button" class="lang-btn active" id="btnLangAsm" onclick="setEditorLang('asm')">ASM</button>
+                                <button type="button" class="lang-btn" id="btnLangC" onclick="setEditorLang('c')">C (Си)</button>
+                            </div>
+                            <button type="button" class="btn-clear-code" onclick="clearEditor()" title="Очистить код">🗑️</button>
                         </div>
                         <div class="editor-status">
                             <span id="compilerStatus">Готов</span>
@@ -81,7 +91,7 @@
                         <div class="line-gutter" id="lineGutter"></div>
                         <div class="editor-container">
                             <pre id="highlighting" aria-hidden="true"><code id="highlightingContent"></code></pre>
-                            <textarea id="asmCode" spellcheck="false" placeholder="Пишите код на ассемблере здесь..."></textarea>
+                            <textarea id="asmCode" spellcheck="false" placeholder="Пишите код здесь..."></textarea>
                         </div>
                     </div>
                 </section>
@@ -99,12 +109,12 @@
                             <div class="btn-matrix">
                                 <button type="button" class="v-btn" id="vbtn_K1" onclick="toggleVButton('K1')">K1 <span>PD2</span></button>
                                 <button type="button" class="v-btn" id="vbtn_K2" onclick="toggleVButton('K2')">K2 <span>PD3</span></button>
-                                <button type="button" class="v-btn" id="vbtn_K3" onclick="toggleVButton('K3')">K3 <span>PB0</span></button>
-                                <button type="button" class="v-btn" id="vbtn_K4" onclick="toggleVButton('K4')">K4 <span>PB1</span></button>
-                                <button type="button" class="v-btn" id="vbtn_K5" onclick="toggleVButton('K5')">K5 <span>PB2</span></button>
-                                <button type="button" class="v-btn" id="vbtn_K6" onclick="toggleVButton('K6')">K6 <span>PB3</span></button>
-                                <button type="button" class="v-btn" id="vbtn_K7" onclick="toggleVButton('K7')">K7 <span>PB4</span></button>
-                                <button type="button" class="v-btn" id="vbtn_K8" onclick="toggleVButton('K8')">K8 <span>PB5</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K3" onclick="toggleVButton('K3')">K3 <span>PD4</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K4" onclick="toggleVButton('K4')">K4 <span>PB0</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K5" onclick="toggleVButton('K5')">K5 <span>PB1</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K6" onclick="toggleVButton('K6')">K6 <span>PB2</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K7" onclick="toggleVButton('K7')">K7 <span>PB3</span></button>
+                                <button type="button" class="v-btn" id="vbtn_K8" onclick="toggleVButton('K8')">K8 <span>PB4</span></button>
                             </div>
                         </div>
 
@@ -171,7 +181,6 @@
                             <div class="registers-grid" id="registersGrid"></div>
                         </div>
 
-                        <!-- ТОЧНЫЙ ДАМП ПАМЯТИ С ВКЛАДКАМИ -->
                         <div class="cpu-subcard mem-card-expanded">
                             <div class="mem-toolbar-header">
                                 <div class="port-selector-btns">
