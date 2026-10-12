@@ -1,6 +1,6 @@
 /* =========================================================
    ЯДРО ЭМУЛЯТОРА AVR ATmega328P (script.js - Монолит)
-   Безопасные комментарии // и ;, экранирование <>, масштабирование
+   Исправленная подсветка синтаксиса без дублирования текста
    ========================================================= */
 
 /* ================= ГЛАВА 1: ПАМЯТЬ И СОСТОЯНИЕ ================= */
@@ -50,17 +50,7 @@ const vButtons = [
     { id: 'K8', port: 'B', pin: 4, pressed: false }
 ];
 
-/* ================= ГЛАВА 2: УНИВЕРСАЛЬНЫЙ ТРАНСЛЯТОР C ================= */
-
-function stripAnyComment(line) {
-    const semi = line.indexOf(';');
-    const slash = line.indexOf('//');
-    let idx = -1;
-    if (semi !== -1 && slash !== -1) idx = Math.min(semi, slash);
-    else if (semi !== -1) idx = semi;
-    else if (slash !== -1) idx = slash;
-    return idx !== -1 ? line.substring(0, idx).trim() : line.trim();
-}
+/* ================= ГЛАВА 2: ТРАНСЛЯТОР MICRO-C -> ASSEMBLER ================= */
 
 function evaluateCExpression(expr) {
     if (!expr) return 0;
@@ -94,7 +84,10 @@ function compileCToAsm(cCode) {
     asmList.push({ asm: '.include "m328pdef.inc"', lineNum: 1 });
 
     for (let i = 0; i < rawLines.length; i++) {
-        let line = stripAnyComment(rawLines[i]);
+        let line = rawLines[i];
+        const slashIdx = line.indexOf('//');
+        if (slashIdx !== -1) line = line.substring(0, slashIdx);
+        line = line.trim();
         const lineNum = i + 1;
 
         if (!line || line.startsWith('#') || line.startsWith('/*') || line.includes('main(')) continue;
@@ -341,7 +334,16 @@ function parseProgram(text) {
     let instIndex = 0;
 
     for (let i = 0; i < lines.length; i++) {
-        let line = stripAnyComment(lines[i]);
+        let line = lines[i];
+        const semi = line.indexOf(';');
+        const slash = line.indexOf('//');
+        let idx = -1;
+        if (semi !== -1 && slash !== -1) idx = Math.min(semi, slash);
+        else if (semi !== -1) idx = semi;
+        else if (slash !== -1) idx = slash;
+        if (idx !== -1) line = line.substring(0, idx);
+
+        line = line.trim();
         if (!line) continue;
 
         if (line.includes(':')) {
@@ -902,13 +904,22 @@ function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// 100% ТОЧНАЯ ПОДСВЕТКА БЕЗ СМЕЩЕНИЙ И ДУБЛИРОВАНИЯ
 function highlightCode(rawText) {
-    if (currentLang === 'c') {
-        return rawText.split('\n').map(line => {
-            const raw = stripAnyComment(line);
-            const comment = line.substring(raw.length);
+    if (!rawText) return '';
+    const lines = rawText.split('\n');
 
-            let p = escapeHtml(raw)
+    if (currentLang === 'c') {
+        return lines.map(line => {
+            let codePart = line;
+            let comment = '';
+            const cIdx = line.indexOf('//');
+            if (cIdx !== -1) {
+                codePart = line.substring(0, cIdx);
+                comment = line.substring(cIdx);
+            }
+
+            let p = escapeHtml(codePart)
                 .replace(/\b(uint8_t|int8_t|uint16_t|int16_t|uint32_t|int|void)\b/g, '<span class="syn-type">$1</span>')
                 .replace(/\b(while|for|if|else|return|break)\b/g, '<span class="syn-kw">$1</span>')
                 .replace(/(#define|#include)/g, '<span class="syn-dir">$1</span>')
@@ -921,11 +932,22 @@ function highlightCode(rawText) {
 
     const KNOWN_OPS = new Set(['ldi','mov','add','adc','sub','subi','sbc','sbci','mul','muls','adiw','sbiw','inc','dec','neg','com','and','andi','or','ori','eor','clr','ser','cpi','cp','cpc','tst','swap','ror','rol','lsl','lsr','asr','sbi','cbi','bst','bld','sbrs','sbrc','sbis','sbic','sec','clc','sez','clz','sen','cln','sev','clv','set','clt','seh','clh','sei','cli','st','std','ld','ldd','lpm','sts','lds','push','pop','jmp','rjmp','breq','brne','brcs','brcc','brlo','brsh','brlt','brge','brmi','brpl','brts','brtc','brvs','brvc','brhs','brhc','call','ret','reti','in','out','break','nop']);
 
-    return rawText.split('\n').map(line => {
-        const raw = stripAnyComment(line);
-        const comment = line.substring(raw.length);
+    return lines.map(line => {
+        let codePart = line;
+        let comment = '';
+        const semi = line.indexOf(';');
+        const slash = line.indexOf('//');
+        let idx = -1;
+        if (semi !== -1 && slash !== -1) idx = Math.min(semi, slash);
+        else if (semi !== -1) idx = semi;
+        else if (slash !== -1) idx = slash;
 
-        let p = escapeHtml(raw)
+        if (idx !== -1) {
+            codePart = line.substring(0, idx);
+            comment = line.substring(idx);
+        }
+
+        let p = escapeHtml(codePart)
             .replace(/^(\s*)([a-zA-Z0-9_]+:)/g, '$1<span class="syn-lbl">$2</span>')
             .replace(/(\.[a-zA-Z0-9_]+)/g, '<span class="syn-dir">$1</span>')
             .replace(/\b(\$[0-9a-fA-F]+|0x[0-9a-fA-F]+|0b[01]+|-?\d+)\b/g, '<span class="syn-num">$1</span>');
@@ -1017,7 +1039,7 @@ function scrollToSlide(index) {
     document.querySelectorAll('.nav-screen-btn').forEach((b, i) => b.classList.toggle('active', i === index));
 }
 
-/* ================= ГЛАВА 9: ПРИМЕРЫ ПРОГРАММ ================= */
+/* ================= ГЛАВА 9: ВЫВЕРЕННЫЕ ПРИМЕРЫ ПРОГРАММ ================= */
 
 const PROGRAMS = {
     empty: { hint: "", lang: "c", code: `#include <avr/io.h>\n\nint main(void)\n{\n    \n    while (1)\n    {\n        \n    }\n}` },
@@ -1025,7 +1047,7 @@ const PROGRAMS = {
     c_zadanie5: {
         hint: "Нажатие кнопок K1 (PD2), K2 (PD3), K3 (PD4) переключает соответствующие светодиоды в режиме триггера.",
         lang: "c",
-        code: `#define F_CPU 16000000UL\n#include <avr/io.h>\n#include <util/delay.h>\n\nint main(void)\n{\n    // Линии светодиодов на вывод:\n    DDRD |= (1 << DDD0) | (1 << DDD1); // PD0 (RX) и PD1 (TX)\n    DDRB |= (1 << DDB5);               // PB5 (светодиод L)\n\n    PORTD &= ~((1 << PORTD0) | (1 << PORTD1));\n    PORTB &= ~(1 << PORTB5);\n\n    // Линии кнопок на вход с подтяжкой:\n    DDRD &= ~((1 << DDD2) | (1 << DDD3) | (1 << DDD4));\n    PORTD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4);\n\n    while (1)\n    {\n        // Кнопка K1 (PD2) переключает светодиод RX (PD0)\n        if (!(PIND & (1 << PIND2)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND2)))\n            {\n                PORTD ^= (1 << PORTD0);\n                while (!(PIND & (1 << PIND2)));\n                _delay_ms(40);\n            }\n        }\n\n        // Кнопка K2 (PD3) переключает светодиод TX (PD1)\n        if (!(PIND & (1 << PIND3)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND3)))\n            {\n                PORTD ^= (1 << PORTD1);\n                while (!(PIND & (1 << PIND3)));\n                _delay_ms(40);\n            }\n        }\n\n        // Кнопка K3 (PD4) переключает светодиод L (PB5)\n        if (!(PIND & (1 << PIND4)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND4)))\n            {\n                PORTB ^= (1 << PORTB5);\n                while (!(PIND & (1 << PIND4)));\n                _delay_ms(40);\n            }\n        }\n    }\n}`
+        code: `#define F_CPU 16000000UL\n#include <avr/io.h>\n#include <util/delay.h>\n\nint main(void)\n{\n    DDRD |= (1 << DDD0) | (1 << DDD1);\n    DDRB |= (1 << DDB5);\n\n    PORTD &= ~((1 << PORTD0) | (1 << PORTD1));\n    PORTB &= ~(1 << PORTB5);\n\n    DDRD &= ~((1 << DDD2) | (1 << DDD3) | (1 << DDD4));\n    PORTD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4);\n\n    while (1)\n    {\n        if (!(PIND & (1 << PIND2)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND2)))\n            {\n                PORTD ^= (1 << PORTD0);\n                while (!(PIND & (1 << PIND2)));\n                _delay_ms(40);\n            }\n        }\n\n        if (!(PIND & (1 << PIND3)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND3)))\n            {\n                PORTD ^= (1 << PORTD1);\n                while (!(PIND & (1 << PIND3)));\n                _delay_ms(40);\n            }\n        }\n\n        if (!(PIND & (1 << PIND4)))\n        {\n            _delay_ms(40);\n            if (!(PIND & (1 << PIND4)))\n            {\n                PORTB ^= (1 << PORTB5);\n                while (!(PIND & (1 << PIND4)));\n                _delay_ms(40);\n            }\n        }\n    }\n}`
     },
 
     c_zadanie2: {
@@ -1047,17 +1069,17 @@ const PROGRAMS = {
     },
 
     sort_ram: { 
-        hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и <b>сортирует их по возрастанию</b>.", 
+        hint: "Программа записывает 5 чисел в ОЗУ (0x0100..0x0104) и сортирует их по возрастанию.", 
         lang: "asm",
         code: `.include "m328pdef.inc"\n\nldi r16, 0x16\nsts 0x0100, r16\nldi r16, 0x03\nsts 0x0101, r16\nldi r16, 0x25\nsts 0x0102, r16\nldi r16, 0x45\nsts 0x0103, r16\nldi r16, 0x01\nsts 0x0104, r16\n\nldi r20, 5\nout_1:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r21, 4\n\nin_1:\n    ld r16, x+\n    ld r17, x\n    cp r16, r17\n    brlo no_s\n\n    st x, r16\n    st -x, r17\n    adiw xl, 1\n\nno_s:\n    dec r21\n    brne in_1\n    dec r20\n    brne out_1\n\nfinish:\n    break\n    rjmp finish` 
     },
     button_led: { 
-        hint: "Нажмите кнопку <b>K1 (PD2)</b> — светодиод <b>L (PB5)</b> загорится.", 
+        hint: "Нажмите кнопку K1 (PD2) — светодиод L (PB5) загорится.", 
         lang: "asm",
         code: `.include "m328pdef.inc"\nstart:\n    in r16, DDRB\n    ori r16, 0x20\n    out DDRB, r16\n    in r16, DDRD\n    andi r16, 0xFB\n    out DDRD, r16\n    in r16, PORTD\n    ori r16, 0x04\n    out PORTD, r16\nloop:\n    in r17, PIND\n    sbrs r17, 2\n    rjmp led_on\n    rjmp led_off\nled_on:\n    in r16, PORTB\n    ori r16, 0x20\n    out PORTB, r16\n    rjmp loop\nled_off:\n    in r16, PORTB\n    andi r16, 0xDF\n    out PORTB, r16\n    rjmp loop` 
     },
     btn_counter: { 
-        hint: "Нажмите кнопку <b>K4 (PB0)</b> (+1) или <b>K5 (PB1)</b> (-1). Порт D покажет результат!", 
+        hint: "Нажмите кнопку K4 (PB0) (+1) или K5 (PB1) (-1). Порт D покажет результат!", 
         lang: "asm",
         code: `.include "m328pdef.inc"\nstart:\n    ser r16\n    out DDRD, r16\n    cbi DDRB, 0\n    cbi DDRB, 1\n    sbi PORTB, 0\n    sbi PORTB, 1\n    clr r0\nloop:\n    out PORTD, r0\n    in r17, PINB\n    sbrs r17, 0\n    inc r0\n    sbrs r17, 1\n    dec r0\n    rjmp loop` 
     },
@@ -1067,7 +1089,7 @@ const PROGRAMS = {
         code: `.include "m328pdef.inc"\nstart:\n    ldi r16, 0xFF\n    out DDRD, r16\n    ldi r17, 0x00\nloop:\n    out PORTD, r17\n    inc r17\n    rjmp loop` 
     },
     fibonacci: { 
-        hint: "Нажмите <b>«Пуск»</b>: ячейки памяти заполнятся числами Фибоначчи!", 
+        hint: "Нажмите «Пуск»: ячейки памяти заполнятся числами Фибоначчи!", 
         lang: "asm",
         code: `.include "m328pdef.inc"\nstart:\n    ldi xh, 0x01\n    ldi xl, 0x00\n    ldi r16, 1\n    ldi r17, 1\nloop:\n    st x+, r16\n    add r17, r16\n    brcs finish\n    st x+, r17\n    add r16, r17\n    brcs finish\n    rjmp loop\nfinish:\n    break\n    nop` 
     },
