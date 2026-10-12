@@ -308,7 +308,7 @@ function parseProgram(text) {
     cpu.program = [];
     cpu.labels = {};
     cpu.error = null;
-
+    if (text) text = text.replace(/\r/g, '');
     if (currentLang === 'c') {
         const compiled = compileCToAsm(text);
         let instIndex = 0;
@@ -905,6 +905,8 @@ function escapeHtml(text) {
 }
 function highlightCode(rawText) {
     if (!rawText) return '';
+    // СРЕЗАЕМ НЕВИДИМЫЕ СИМВОЛЫ \r ИЗ WINDOWS / ATMEL STUDIO
+    rawText = rawText.replace(/\r/g, '');
     const lines = rawText.split('\n');
 
     if (currentLang === 'c') {
@@ -954,6 +956,7 @@ function highlightCode(rawText) {
         return p + (comment ? `<span class="syn-com">${escapeHtml(comment)}</span>` : '');
     }).join('\n');
 }
+
 function updateSyntax() {
     const code = document.getElementById('asmCode').value;
     document.getElementById('highlightingContent').innerHTML = highlightCode(code) + '\n';
