@@ -54,32 +54,41 @@ const vButtons = [
 
 function evaluateCExpression(expr) {
     if (!expr) return 0;
-    expr = expr.trim();
-    expr = expr.replace(/\bDDD([0-7])\b/g, '$1')
-               .replace(/\bDDB([0-7])\b/g, '$1')
-               .replace(/\bDDC([0-7])\b/g, '$1')
-               .replace(/\bPORTD([0-7])\b/g, '$1')
-               .replace(/\bPORTB([0-7])\b/g, '$1')
-               .replace(/\bPORTC([0-7])\b/g, '$1')
-               .replace(/\bPIND([0-7])\b/g, '$1')
-               .replace(/\bPINB([0-7])\b/g, '$1')
-               .replace(/\bPINC([0-7])\b/g, '$1');
-
-    if (/^[0-9xXa-fA-F<>&|^~()+ \t-]+$/.test(expr)) {
-        try {
-            return Function(`'use strict'; return (${expr});`)();
-        } catch (e) {}
-    }
-    return null;
-}
-
-function compileCToAsm(cCode) {
+   function compileCToAsm(cCode) {
     const rawLines = cCode.split('\n');
     const asmList = [];
     let regCounter = 17;
     const varMap = {};
     let labelCounter = 1;
     const controlStack = [];
+    const defines = {}; // Сбор констант #define
+
+    // 1. Первый проход: собираем все константы #define (например, THRESHOLD 200000UL)
+    for (let i = 0; i < rawLines.length; i++) {
+        const line = rawLines[i].trim();
+        const defMatch = line.match(/^#define\s+([a-zA-Z0-9_]+)\s+(.+)$/);
+        if (defMatch) {
+            let valStr = defMatch[2].replace(/UL|U|L/gi, '').trim();
+            defines[defMatch[1]] = valStr;
+        }
+    }
+
+    // Вспомогательная функция для замены имен констант на их числа
+    function applyDefines(str) {
+        for (const [k, v] of Object.entries(defines)) {
+            str = str.replace(new RegExp('\\b' + k + '\\b', 'g'), v);
+        }
+        return str;
+    }
+
+    // Вспомогательная функция пропорционального масштабирования больших счётчиков
+    function scaleThreshold(val) {
+        if (val > 1000) {
+            // Базовый 800000 превращается в 40 тактов. 200000 (уменьшен в 4 раза) -> в 10 тактов.
+            return Math.max(2, Math.min(100, Math.round(val / 20000)));
+        }
+        return val;
+    }
 
     asmList.push({ asm: '.include "m328pdef.inc"', lineNum: 1 });
 
@@ -126,13 +135,14 @@ function compileCToAsm(cCode) {
         const declMatch = line.match(/\b(uint8_t|int8_t|uint16_t|int16_t|uint32_t|int)\s+([a-zA-Z0-9_]+)(\s*=\s*([^;]+))?;/);
         if (declMatch) {
             const varName = declMatch[2];
-            const initVal = declMatch[4] ? declMatch[4].trim() : "0";
+            let initVal = declMatch[4] ? declMatch[4].trim() : "0";
+            initVal = applyDefines(initVal);
             const reg = 'r' + (regCounter++);
             varMap[varName] = { reg };
 
             let constVal = evaluateCExpression(initVal);
             if (constVal !== null) {
-                if (constVal > 1000) constVal = 20;
+                constVal = scaleThreshold(constVal);
                 asmList.push({ asm: `ldi ${reg}, ${constVal & 0xFF}`, lineNum });
             }
             continue;
@@ -141,7 +151,7 @@ function compileCToAsm(cCode) {
         const portOrMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC)\s*\|\=\s*([^;]+);/);
         if (portOrMatch) {
             const portName = portOrMatch[1];
-            const mask = evaluateCExpression(portOrMatch[2]) & 0xFF;
+            const mask = evaluateCExpression(applyDefines(portOrMatch[2])) & 0xFF;
             asmList.push({ asm: `in r16, ${portName}`, lineNum });
             asmList.push({ asm: `ori r16, ${mask}`, lineNum });
             asmList.push({ asm: `out ${portName}, r16`, lineNum });
@@ -151,7 +161,7 @@ function compileCToAsm(cCode) {
         const portAndNotMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD|DDRC|PORTC)\s*&\=\s*~\s*\(?\s*([^;]+)\)?;/);
         if (portAndNotMatch) {
             const portName = portAndNotMatch[1];
-            const rawExpr = portAndNotMatch[2].replace(/\)+$/, '');
+            const rawExpr = applyDefines(portAndNotMatch[2].replace(/\)+$/, ''));
             const mask = evaluateCExpression(rawExpr) & 0xFF;
             const invMask = (~mask) & 0xFF;
             asmList.push({ asm: `in r16, ${portName}`, lineNum });
@@ -163,7 +173,7 @@ function compileCToAsm(cCode) {
         const portXorMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD)\s*\^\=\s*([^;]+);/);
         if (portXorMatch) {
             const portName = portXorMatch[1];
-            const mask = evaluateCExpression(portXorMatch[2]) & 0xFF;
+            const mask = evaluateCExpression(applyDefines(portXorMatch[2])) & 0xFF;
             asmList.push({ asm: `in r16, ${portName}`, lineNum });
             asmList.push({ asm: `ldi r17, ${mask}`, lineNum });
             asmList.push({ asm: `eor r16, r17`, lineNum });
@@ -174,7 +184,7 @@ function compileCToAsm(cCode) {
         const portAssignMatch = line.match(/\b(DDRB|PORTB|DDRD|PORTD)\s*=\s*([^;]+);/);
         if (portAssignMatch) {
             const portName = portAssignMatch[1];
-            const expr = portAssignMatch[2].trim();
+            let expr = applyDefines(portAssignMatch[2].trim());
 
             if (expr.includes('&')) {
                 const parts = expr.split('&');
@@ -200,7 +210,7 @@ function compileCToAsm(cCode) {
         const waitReleaseMatch = line.match(/while\s*\(\s*!\s*\(\s*(PINB|PIND)\s*&\s*\(\s*1\s*<<\s*([^)]+)\)\s*\)\s*\);/);
         if (waitReleaseMatch) {
             const pinPort = waitReleaseMatch[1];
-            const bit = evaluateCExpression(waitReleaseMatch[2]);
+            const bit = evaluateCExpression(applyDefines(waitReleaseMatch[2]));
             const waitLbl = `wait_rel_${labelCounter++}`;
             asmList.push({ asm: `${waitLbl}:`, lineNum });
             asmList.push({ asm: `in r16, ${pinPort}`, lineNum });
@@ -214,12 +224,12 @@ function compileCToAsm(cCode) {
 
         if (ifBtnMatch) {
             pinPort = ifBtnMatch[1];
-            bit = evaluateCExpression(ifBtnMatch[2]);
+            bit = evaluateCExpression(applyDefines(ifBtnMatch[2]));
         } else {
             const altBtnMatch = line.match(/if\s*\(\s*\(\s*(PINB|PIND)\s*&\s*([^)]+)\)\s*==\s*0[xX]?0*\s*\)/);
             if (altBtnMatch) {
                 pinPort = altBtnMatch[1];
-                const mask = evaluateCExpression(altBtnMatch[2]);
+                const mask = evaluateCExpression(applyDefines(altBtnMatch[2]));
                 bit = Math.log2(mask) || 0;
                 ifBtnMatch = true;
             }
@@ -241,27 +251,39 @@ function compileCToAsm(cCode) {
             continue;
         }
 
-        const ifCmpMatch = line.match(/if\s*\(\s*([a-zA-Z0-9_]+)\s*==\s*([^)]+)\)/);
+        // ПОДДЕРЖКА УСЛОВИЙ: == , >= , >
+        const ifCmpMatch = line.match(/if\s*\(\s*([a-zA-Z0-9_]+)\s*(==|>=|>)\s*([^)]+)\)/);
         if (ifCmpMatch) {
             const vName = ifCmpMatch[1];
-            let cmpVal = evaluateCExpression(ifCmpMatch[2]);
-            if (cmpVal > 1000) cmpVal = 20;
-            const lblFalse = `lbl_skip_${labelCounter++}`;
-            if (varMap[vName]) {
+            const op = ifCmpMatch[2];
+            let rawCmp = applyDefines(ifCmpMatch[3]);
+            let cmpVal = evaluateCExpression(rawCmp);
+
+            if (cmpVal !== null && varMap[vName]) {
+                cmpVal = scaleThreshold(cmpVal);
+                const lblFalse = `lbl_skip_${labelCounter++}`;
                 asmList.push({ asm: `cpi ${varMap[vName].reg}, ${cmpVal & 0xFF}`, lineNum });
-                asmList.push({ asm: `brne ${lblFalse}`, lineNum });
+
+                if (op === '==') {
+                    asmList.push({ asm: `brne ${lblFalse}`, lineNum });
+                } else {
+                    // Для >= и > перескакиваем блок, если значение строго МЕНЬШЕ (brlo)
+                    asmList.push({ asm: `brlo ${lblFalse}`, lineNum });
+                }
                 controlStack.push({ type: 'if', lblFalse });
+                continue;
             }
-            continue;
         }
 
         const varAssignMatch = line.match(/\b([a-zA-Z0-9_]+)\s*=\s*([^;]+);/);
         if (varAssignMatch) {
             const vName = varAssignMatch[1];
             if (varMap[vName]) {
-                let constVal = evaluateCExpression(varAssignMatch[2]);
-                if (constVal > 1000) constVal = 20;
-                asmList.push({ asm: `ldi ${varMap[vName].reg}, ${constVal & 0xFF}`, lineNum });
+                let constVal = evaluateCExpression(applyDefines(varAssignMatch[2]));
+                if (constVal !== null) {
+                    constVal = scaleThreshold(constVal);
+                    asmList.push({ asm: `ldi ${varMap[vName].reg}, ${constVal & 0xFF}`, lineNum });
+                }
             }
             continue;
         }
@@ -301,7 +323,6 @@ function compileCToAsm(cCode) {
 
     return asmList;
 }
-
 /* ================= ГЛАВА 3: КОМПИЛЯТОР И ПАРСЕР ================= */
 
 function parseProgram(text) {
