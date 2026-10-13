@@ -105,14 +105,19 @@ function compileCToAsm(cCode) {
         }
         return str;
     }
-
+   
     function scaleThreshold(val) {
-        if (val > 1000) {
-            return Math.max(2, Math.min(100, Math.round(val / 20000)));
+        // 1. Для гигантских чисел из реального железа (200 000 .. 800 000):
+        // 200 000 превратится в 10 тактов, 800 000 — в 40 тактов (ровно в 4 раза быстрее!)
+        if (val >= 10000) {
+            return Math.max(5, Math.round(val / 20000));
         }
-        return val;
-    }
 
+        // 2. Для всех обычных чисел (от 1 до 255):
+        // Прямая честная зависимость: 20 тактов < 200 тактов. Чем больше число, тем дольше ждать!
+        return Math.min(255, Math.max(1, val));
+    }
+    
     asmList.push({ asm: '.include "m328pdef.inc"', lineNum: 1 });
 
     for (let i = 0; i < rawLines.length; i++) {
